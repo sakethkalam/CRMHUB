@@ -1,0 +1,102 @@
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+from datetime import datetime
+
+# --- Token Schemas ---
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    email: str | None = None
+
+# --- User Schemas ---
+class UserBase(BaseModel):
+    email: EmailStr
+    full_name: str | None = None
+
+class UserCreate(UserBase):
+    password: str
+
+class UserResponse(UserBase):
+    id: int
+    is_active: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# --- Account Schemas ---
+class AccountBase(BaseModel):
+    name: str
+    industry: str | None = None
+    website: str | None = None
+
+class AccountCreate(AccountBase):
+    pass
+
+class AccountUpdate(AccountBase):
+    name: str | None = None
+
+class AccountResponse(AccountBase):
+    id: int
+    owner_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# --- Contact Schemas ---
+class ContactBase(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr | None = None
+    phone: str | None = None
+    account_id: int | None = None
+
+class ContactCreate(ContactBase):
+    pass
+
+class ContactUpdate(ContactBase):
+    first_name: str | None = None
+    last_name: str | None = None
+
+class ContactResponse(ContactBase):
+    id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# --- Opportunity Schemas ---
+from models import OpportunityStage
+
+class OpportunityBase(BaseModel):
+    name: str
+    amount: float = 0.0
+    stage: OpportunityStage = OpportunityStage.PROSPECTING
+    expected_close_date: datetime | None = None
+    account_id: int | None = None
+
+class OpportunityCreate(OpportunityBase):
+    pass
+
+class OpportunityUpdate(BaseModel):
+    name: str | None = None
+    amount: float | None = None
+    expected_close_date: datetime | None = None
+    account_id: int | None = None
+
+class OpportunityStageUpdate(BaseModel):
+    stage: OpportunityStage
+
+class OpportunityResponse(OpportunityBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
