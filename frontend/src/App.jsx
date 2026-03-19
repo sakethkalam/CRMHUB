@@ -5,10 +5,10 @@ import Layout from './components/Layout';
 import Accounts from './pages/Accounts';
 import Contacts from './pages/Contacts';
 import Opportunities from './pages/Opportunities';
+import Login from './pages/Login';
 
-// --- Temporary Stub Components ---
-// We will replace these with real beautiful UI components in Phase 4
-const Login = () => <div className="flex h-screen items-center justify-center"><h1 className="text-2xl font-bold">Login Screen Placeholder</h1></div>;
+// --- Dashboard Stub Component ---
+// (We still need to build the Dashboard charts, so keeping this temp stub)
 const Dashboard = () => <div className="p-10"><h1 className="text-3xl font-bold">Dashboard</h1><p className="opacity-70 mt-2">Welcome to your robust React CRM.</p></div>;
 
 // --- PrivateRoute Wrapper Component ---

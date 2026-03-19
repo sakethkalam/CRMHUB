@@ -52,11 +52,11 @@ class Settings(BaseSettings):
     
     # --- Database ---
     # Full connection string for PostgreSQL.
-    # Format: postgresql+asyncpg://USER:PASSWORD@HOST:PORT/DBNAME
-    # asyncpg = the async driver we installed
-    # Example placeholder for Azure Student Subscription
-    DATABASE_URL: str = "postgresql+asyncpg://<YOUR_AZURE_USER>:<YOUR_PASSWORD>@<YOUR_SERVER>.postgres.database.azure.com:5432/crm_db"
-    # Connection pool settings — how many DB connections to keep open
+    # Database Connection
+    # For local development testing, we will use a local SQLite file so you don't
+    # need an active Azure PostgreSQL server spinning right now.
+    DATABASE_URL: str = "sqlite+aiosqlite:///./crm_local.db"
+
     # Think of this like a pool of workers waiting to handle DB queries
     DB_POOL_SIZE: int = 10         # Number of persistent connections
     DB_MAX_OVERFLOW: int = 20      # Extra connections allowed under load

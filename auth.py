@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from passlib.context import CryptContext
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 import jwt
@@ -11,19 +11,20 @@ from config import settings
 from database import get_db
 from models import User
 
-# Password hashing context using bcrypt
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 # OAuth2 scheme: Tells FastAPI where the client should send the token request
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Check if the provided plain text password matches the hashed password in the DB"""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except Exception:
+        return False
 
 def get_password_hash(password: str) -> str:
     """Hash a plain text password before storing it in the DB"""
-    return pwd_context.hash(password)
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Create a new JWT access token containing the user's data (subject)"""
