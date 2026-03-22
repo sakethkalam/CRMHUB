@@ -10,6 +10,8 @@ const Login = () => {
   // Toggle between Login and Registration views
   const [isLoginView, setIsLoginView] = useState(true);
   const [errorStatus, setErrorStatus] = useState('');
+  const [pendingApproval, setPendingApproval] = useState(false);
+  const [registerSuccess, setRegisterSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
   // Form fields
@@ -24,29 +26,26 @@ const Login = () => {
     
     try {
       if (isLoginView) {
-        // AuthContext automatically expects (username, password)
-        // FastAPI's OAuth2 relies on the string "username", which maps to our email
         await login(email, password);
         navigate('/');
       } else {
-        // Registering a brand new user using our FastAPI payload endpoint
-        await api.post('/users/register', { 
-            email: email, 
-            password: password, 
-            full_name: fullName 
+        await api.post('/users/register', {
+          email, password, full_name: fullName,
         });
-        
-        // Auto-login after successful creation
-        await login(email, password);
-        navigate('/');
+        // Account requires admin approval — don't auto-login
+        setRegisterSuccess(true);
       }
     } catch (err) {
-      console.error('Auth error:', err.response?.status, err.response?.data);
-      setErrorStatus(
-        err.response?.data?.detail ||
-        err.message ||
-        (isLoginView ? 'Invalid credentials' : 'Registration failed. Check your data.')
-      );
+      const detail = err.response?.data?.detail;
+      if (detail === 'pending_approval') {
+        setPendingApproval(true);
+      } else {
+        setErrorStatus(
+          detail ||
+          err.message ||
+          (isLoginView ? 'Invalid credentials' : 'Registration failed. Check your data.')
+        );
+      }
     } finally {
       setIsLoading(false);
     }
@@ -76,6 +75,18 @@ const Login = () => {
         <div className="bg-white dark:bg-crmCard py-8 px-4 shadow-2xl shadow-slate-200/50 dark:shadow-none sm:rounded-2xl sm:px-10 border border-slate-200 dark:border-slate-800">
           <form className="space-y-6" onSubmit={handleSubmit}>
             
+            {registerSuccess && (
+              <div className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 px-4 py-3 rounded-lg text-sm text-center font-medium">
+                ✅ Account created! The admin has been notified and will approve your account shortly. You'll receive a confirmation email.
+              </div>
+            )}
+
+            {pendingApproval && (
+              <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 px-4 py-3 rounded-lg text-sm text-center font-medium">
+                ⏳ Your account is pending admin approval. You'll receive an email once it's approved.
+              </div>
+            )}
+
             {errorStatus && (
               <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-4 py-3 rounded-lg text-sm text-center font-medium animate-in slide-in-from-top-2">
                 {errorStatus}
@@ -160,6 +171,8 @@ const Login = () => {
               onClick={() => {
                 setIsLoginView(!isLoginView);
                 setErrorStatus('');
+                setPendingApproval(false);
+                setRegisterSuccess(false);
               }}
               className="text-sm font-bold text-crmAccent hover:text-crmHover transition-colors focus:outline-none"
             >

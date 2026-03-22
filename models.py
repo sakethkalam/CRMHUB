@@ -21,7 +21,8 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255))
-    is_active = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=False)   # False until admin approves
+    is_approved = Column(Boolean, default=False)  # Admin must approve new registrations
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     # Relationships

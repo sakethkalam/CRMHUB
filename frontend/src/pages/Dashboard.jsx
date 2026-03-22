@@ -11,14 +11,8 @@ const STAGE_COLORS = {
   "Closed Lost":   { bar: 'bg-red-400',     pill: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
 };
 
-const STAGE_MAP = {
-  PROSPECTING: 'Prospecting',
-  QUALIFICATION: 'Qualification',
-  PROPOSAL: 'Proposal',
-  NEGOTIATION: 'Negotiation',
-  CLOSED_WON: 'Closed Won',
-  CLOSED_LOST: 'Closed Lost',
-};
+// Ordered stage labels matching the API's string enum values
+const STAGE_ORDER = ['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'];
 
 const fmt = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
 
@@ -46,9 +40,9 @@ const Dashboard = () => {
     const load = async () => {
       try {
         const [a, c, o] = await Promise.all([
-          api.get('/accounts'),
-          api.get('/contacts'),
-          api.get('/opportunities'),
+          api.get('/accounts/'),
+          api.get('/contacts/'),
+          api.get('/opportunities/'),
         ]);
         setAccounts(a.data);
         setContacts(c.data);
@@ -64,24 +58,24 @@ const Dashboard = () => {
 
   // Derived stats
   const totalPipelineValue = opportunities
-    .filter(o => !['CLOSED_WON', 'CLOSED_LOST'].includes(o.stage))
-    .reduce((sum, o) => sum + (o.value || 0), 0);
+    .filter(o => !['Closed Won', 'Closed Lost'].includes(o.stage))
+    .reduce((sum, o) => sum + (o.amount || 0), 0);
 
   const wonValue = opportunities
-    .filter(o => o.stage === 'CLOSED_WON')
-    .reduce((sum, o) => sum + (o.value || 0), 0);
+    .filter(o => o.stage === 'Closed Won')
+    .reduce((sum, o) => sum + (o.amount || 0), 0);
 
   const winRate = opportunities.length > 0
-    ? Math.round(opportunities.filter(o => o.stage === 'CLOSED_WON').length / opportunities.length * 100)
+    ? Math.round(opportunities.filter(o => o.stage === 'Closed Won').length / opportunities.length * 100)
     : 0;
 
   // Pipeline by stage
   const stageCounts = {};
   const stageValues = {};
   opportunities.forEach(o => {
-    const label = STAGE_MAP[o.stage] || o.stage;
+    const label = o.stage; // API returns display strings directly e.g. "Closed Won"
     stageCounts[label] = (stageCounts[label] || 0) + 1;
-    stageValues[label] = (stageValues[label] || 0) + (o.value || 0);
+    stageValues[label] = (stageValues[label] || 0) + (o.amount || 0);
   });
 
   const maxCount = Math.max(1, ...Object.values(stageCounts));
@@ -152,13 +146,13 @@ const Dashboard = () => {
             <p className="text-sm text-slate-400 text-center py-8">No opportunities yet</p>
           ) : (
             <div className="space-y-3">
-              {Object.entries(STAGE_MAP).map(([key, label]) => {
+              {STAGE_ORDER.map(label => {
                 const count = stageCounts[label] || 0;
                 const val = stageValues[label] || 0;
                 if (count === 0) return null;
                 const colors = STAGE_COLORS[label] || { bar: 'bg-slate-400', pill: 'bg-slate-100 text-slate-700' };
                 return (
-                  <div key={key}>
+                  <div key={label}>
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
                         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${colors.pill}`}>{label}</span>
@@ -223,9 +217,9 @@ const Dashboard = () => {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
           {[
             { label: 'Total Deals',   value: opportunities.length },
-            { label: 'Active',        value: opportunities.filter(o => !['CLOSED_WON','CLOSED_LOST'].includes(o.stage)).length },
-            { label: 'Won',           value: opportunities.filter(o => o.stage === 'CLOSED_WON').length },
-            { label: 'Lost',          value: opportunities.filter(o => o.stage === 'CLOSED_LOST').length },
+            { label: 'Active',        value: opportunities.filter(o => !['Closed Won','Closed Lost'].includes(o.stage)).length },
+            { label: 'Won',           value: opportunities.filter(o => o.stage === 'Closed Won').length },
+            { label: 'Lost',          value: opportunities.filter(o => o.stage === 'Closed Lost').length },
           ].map(({ label, value }) => (
             <div key={label} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
               <p className="text-xl font-bold text-slate-900 dark:text-white">{value}</p>

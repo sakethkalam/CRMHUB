@@ -50,6 +50,7 @@ class UserUpdate(BaseModel):
 class UserResponse(UserBase):
     id: int
     is_active: bool
+    is_approved: bool
     created_at: datetime
 
     class Config:
