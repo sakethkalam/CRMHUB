@@ -116,8 +116,8 @@ const Login = () => {
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Password</label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input 
-                  type="password" 
+                <input
+                  type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -125,6 +125,11 @@ const Login = () => {
                   placeholder="••••••••••••"
                 />
               </div>
+              {!isLoginView && (
+                <p className="mt-1.5 text-xs text-slate-400">
+                  Min 8 characters, at least 1 uppercase letter and 1 number. Example: <span className="font-mono">Crm12345</span>
+                </p>
+              )}
             </div>
 
             <button 

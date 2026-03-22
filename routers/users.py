@@ -63,8 +63,8 @@ async def login_for_access_token(
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=not settings.DEBUG,   # HTTPS only in production
-        samesite="lax",
+        secure=not settings.DEBUG,
+        samesite="none" if not settings.DEBUG else "lax",  # cross-origin in prod
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
@@ -74,7 +74,7 @@ async def login_for_access_token(
 @router.post("/logout")
 async def logout(response: Response):
     """Clear the auth cookie server-side."""
-    response.delete_cookie("access_token", samesite="lax")
+    response.delete_cookie("access_token", samesite="none" if not settings.DEBUG else "lax", secure=not settings.DEBUG)
     return {"message": "Logged out successfully"}
 
 
