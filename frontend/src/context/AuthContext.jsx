@@ -44,22 +44,19 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
-    try {
-      const params = new URLSearchParams();
-      params.append('username', email);
-      params.append('password', password);
+    const params = new URLSearchParams();
+    params.append('username', email);
+    params.append('password', password);
 
-      // Server sets the httpOnly cookie — we don't touch tokens
-      await api.post('/users/login', params, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
+    // Server sets the httpOnly cookie — we don't touch tokens.
+    // Errors are intentionally NOT caught here so Login.jsx can handle
+    // specific error codes (e.g. 403 pending_approval).
+    await api.post('/users/login', params, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
 
-      const response = await api.get('/users/me');
-      setUser(response.data);
-      return true;
-    } catch {
-      return false;
-    }
+    const response = await api.get('/users/me');
+    setUser(response.data);
   };
 
   const logout = async () => {

@@ -26,8 +26,8 @@ const Login = () => {
     
     try {
       if (isLoginView) {
-        await login(email, password);
-        navigate('/');
+        await login(email, password); // throws on any failure — catch block below handles it
+        navigate('/');               // only reached on success
       } else {
         await api.post('/users/register', {
           email, password, full_name: fullName,
