@@ -76,6 +76,7 @@ engine: AsyncEngine = create_async_engine(
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_timeout=settings.DB_POOL_TIMEOUT,
     pool_pre_ping=True,
+    connect_args={"ssl": "require"} if "postgres.database.azure.com" in settings.DATABASE_URL else {},
 )
 
 
