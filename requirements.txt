@@ -10,3 +10,4 @@ aiosqlite
 python-multipart
 slowapi
 anthropic
+bcrypt
