@@ -33,7 +33,7 @@ const Opportunities = () => {
   const fetchOpportunities = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/opportunities?limit=100'); // Bring enough payload to map to the board
+      const res = await api.get('/opportunities/?limit=100'); // Bring enough payload to map to the board
       setOpportunities(res.data);
     } catch (err) {
       console.error("Failed to fetch opportunities pipeline:", err);

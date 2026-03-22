@@ -15,7 +15,7 @@ const Contacts = () => {
   const fetchContacts = async () => {
     try {
       setLoading(true);
-      const res = await api.get(`/contacts?search=${searchQuery}`);
+      const res = await api.get(`/contacts/?search=${searchQuery}`);
       setContacts(res.data);
     } catch (err) {
       console.error("Failed to fetch contacts", err);

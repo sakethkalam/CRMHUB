@@ -15,7 +15,7 @@ const Accounts = () => {
   const fetchAccounts = async () => {
     try {
       setLoading(true);
-      const res = await api.get(`/accounts?search=${searchQuery}`);
+      const res = await api.get(`/accounts/?search=${searchQuery}`);
       setAccounts(res.data);
     } catch (err) {
       console.error("Failed to fetch accounts", err);
