@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 import uvicorn
+import logging
 from contextlib import asynccontextmanager
 
 from config import settings
@@ -10,9 +11,27 @@ from database import engine, Base
 from limiter import limiter
 from routers import users, accounts, contacts, opportunities, chat
 
+logger = logging.getLogger(__name__)
+
+
+async def run_migrations():
+    """
+    Lightweight startup migrations — adds new columns without breaking existing data.
+    Uses 'IF NOT EXISTS' so it's safe to run on every startup.
+    Existing users get is_approved=TRUE (DEFAULT TRUE) so they aren't locked out.
+    New registrations will have is_approved set to FALSE by SQLAlchemy explicitly.
+    """
+    async with engine.begin() as conn:
+        await conn.execute(__import__('sqlalchemy').text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+            "is_approved BOOLEAN NOT NULL DEFAULT TRUE"
+        ))
+    logger.info("Startup migrations complete.")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await run_migrations()
     yield
     await engine.dispose()
 
