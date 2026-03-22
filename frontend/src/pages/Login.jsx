@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import { useState, useContext } from 'react';
 import { AuthContext, api } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { BarChart3, Mail, Lock, User, ArrowRight } from 'lucide-react';
@@ -41,8 +41,10 @@ const Login = () => {
         navigate('/');
       }
     } catch (err) {
+      console.error('Auth error:', err.response?.status, err.response?.data);
       setErrorStatus(
-        err.response?.data?.detail || 
+        err.response?.data?.detail ||
+        err.message ||
         (isLoginView ? 'Invalid credentials' : 'Registration failed. Check your data.')
       );
     } finally {
