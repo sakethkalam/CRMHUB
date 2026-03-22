@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     # In production, set this to: ["https://your-frontend.azurestaticapps.net"]
     #
     # PYTHON CONCEPT: list[str] means a list where every item is a string
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000", "https://crmhub-2pyxncexf-sakethkalams-projects.vercel.app"]
+    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000", "https://crmhub-ten.vercel.app"]
 
     # --- Pydantic Settings Config ---
     # model_config tells Pydantic how to behave
