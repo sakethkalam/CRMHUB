@@ -184,10 +184,10 @@ const Dashboard = () => {
           ) : (
             <div className="space-y-0 divide-y divide-slate-100 dark:divide-slate-800">
               {recentOpps.map(opp => {
-                const label = STAGE_MAP[opp.stage] || opp.stage;
+                const label = opp.stage; // API returns display strings directly
                 const colors = STAGE_COLORS[label] || { pill: 'bg-slate-100 text-slate-700' };
-                const isWon = opp.stage === 'CLOSED_WON';
-                const isLost = opp.stage === 'CLOSED_LOST';
+                const isWon = opp.stage === 'Closed Won';
+                const isLost = opp.stage === 'Closed Lost';
                 return (
                   <div key={opp.id} className="flex items-center justify-between py-3">
                     <div className="min-w-0 flex-1">
