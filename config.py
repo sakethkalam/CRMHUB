@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 20      # Extra connections allowed under load
     DB_POOL_TIMEOUT: int = 30      # Seconds to wait before giving up
 
+    # --- Anthropic ---
+    ANTHROPIC_API_KEY: str = ""
+
     # --- JWT Authentication ---
     # This is the secret key used to sign JWT tokens.
     # IMPORTANT: Change this to a long random string in production!

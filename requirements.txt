@@ -4,8 +4,9 @@ sqlalchemy
 pydantic[email]
 pydantic-settings
 email-validator
-passlib[bcrypt]
 PyJWT
 asyncpg
 aiosqlite
 python-multipart
+slowapi
+anthropic

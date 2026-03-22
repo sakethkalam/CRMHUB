@@ -22,7 +22,7 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255))
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     accounts = relationship("Account", back_populates="owner")
@@ -39,8 +39,8 @@ class Account(Base):
     website = Column(String(255))
     owner_id = Column(Integer, ForeignKey("users.id"))
     
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     owner = relationship("User", back_populates="accounts")
@@ -61,7 +61,7 @@ class Contact(Base):
     
     account_id = Column(Integer, ForeignKey("accounts.id"))
     
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     account = relationship("Account", back_populates="contacts")
@@ -76,12 +76,12 @@ class Opportunity(Base):
     name = Column(String(255), nullable=False)
     amount = Column(Float, default=0.0)
     stage = Column(Enum(OpportunityStage), default=OpportunityStage.PROSPECTING, nullable=False)
-    expected_close_date = Column(DateTime)
+    expected_close_date = Column(DateTime(timezone=True))
     
     account_id = Column(Integer, ForeignKey("accounts.id"))
     
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     account = relationship("Account", back_populates="opportunities")
@@ -104,7 +104,7 @@ class Activity(Base):
     contact_id = Column(Integer, ForeignKey("contacts.id"), nullable=True)
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
     
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user = relationship("User", back_populates="activities")

@@ -1,46 +1,57 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 import uvicorn
 from contextlib import asynccontextmanager
 
 from config import settings
 from database import engine, Base
+from limiter import limiter
+from routers import users, accounts, contacts, opportunities, chat
 
-# Import all our newly built routers
-from routers import users, accounts, contacts, opportunities
 
-# Lifespan context to automatically construct our database tables when the server starts
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     yield
+    await engine.dispose()
+
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    lifespan=lifespan
+    lifespan=lifespan,
+    # Disable interactive API docs in production
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG else None,
 )
 
-# Crucial for local dev: Allow the React Vite server (usually port 5173) to bypass CORS blocks
+# Rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS — explicit methods and headers instead of wildcards
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"], 
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
-# Mount our microservices explicitly into the app
 app.include_router(users.router)
 app.include_router(accounts.router)
 app.include_router(contacts.router)
 app.include_router(opportunities.router)
+app.include_router(chat.router)
+
 
 @app.get("/")
 async def root():
-    return {"message": "CRM API Backend is running! Access the Swagger UI at /docs"}
+    return {"message": "CRM API is running"}
+
 
 if __name__ == "__main__":
-    # Provides a default execution profile
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # Bind to localhost only in dev; use a production ASGI server (gunicorn) in prod
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=settings.DEBUG)

@@ -1,26 +1,24 @@
-import React, { useContext } from 'react';
+import { useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, AuthContext } from './context/AuthContext';
 import Layout from './components/Layout';
+import Dashboard from './pages/Dashboard';
 import Accounts from './pages/Accounts';
 import Contacts from './pages/Contacts';
 import Opportunities from './pages/Opportunities';
+import Profile from './pages/Profile';
+import Settings from './pages/Settings';
 import Login from './pages/Login';
-
-// --- Dashboard Stub Component ---
-// (We still need to build the Dashboard charts, so keeping this temp stub)
-const Dashboard = () => <div className="p-10"><h1 className="text-3xl font-bold">Dashboard</h1><p className="opacity-70 mt-2">Welcome to your robust React CRM.</p></div>;
 
 // --- PrivateRoute Wrapper Component ---
 // This intelligently blocks access to any page that requires authentication.
 const PrivateRoute = ({ children }) => {
-  const { user, loading, token } = useContext(AuthContext);
+  const { user, loading } = useContext(AuthContext);
 
-  // If the context is still pinging FastAPI to verify the JWT token
+  // If the context is still pinging FastAPI to verify the session
   if (loading) {
     return (
       <div className="flex justify-center items-center h-screen w-full bg-slate-50 dark:bg-crmDark">
-        {/* Simple Tailwind loading pulse */}
         <div className="flex flex-col items-center">
           <div className="w-12 h-12 border-4 border-crmAccent border-t-transparent rounded-full animate-spin"></div>
           <p className="mt-4 text-slate-500 font-medium tracking-wide animate-pulse">Authenticating...</p>
@@ -29,8 +27,7 @@ const PrivateRoute = ({ children }) => {
     );
   }
 
-  // If there's no trace of a token or user, bounce them back to the login wall
-  if (!token && !user) {
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
 
@@ -53,6 +50,8 @@ function App() {
             <Route path="accounts" element={<Accounts />} />
             <Route path="contacts" element={<Contacts />} />
             <Route path="opportunities" element={<Opportunities />} />
+            <Route path="profile" element={<Profile />} />
+            <Route path="settings" element={<Settings />} />
           </Route>
           
           {/* Catch-all Fallback (404 mapping) */}

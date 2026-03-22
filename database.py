@@ -71,19 +71,10 @@ class Base(DeclarativeBase):
 # ---------------------------------------------------------------
 engine: AsyncEngine = create_async_engine(
     url=settings.DATABASE_URL,
-    
-    # echo=True prints every SQL query to the console.
-    # Great for debugging! Set to False in production.
     echo=settings.DEBUG,
-    
-    # Connection pool configuration (values come from config.py)
-    pool_size=settings.DB_POOL_SIZE,       # Keep this many connections open
-    max_overflow=settings.DB_MAX_OVERFLOW, # Allow this many extra under peak load
-    pool_timeout=settings.DB_POOL_TIMEOUT, # Raise error if no connection available after N secs
-    
-    # pool_pre_ping=True sends a "SELECT 1" before giving out a connection
-    # to verify it's still alive. This prevents "connection lost" errors
-    # after the database restarts or times out.
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_timeout=settings.DB_POOL_TIMEOUT,
     pool_pre_ping=True,
 )
 

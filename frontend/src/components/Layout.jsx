@@ -1,40 +1,80 @@
-import React, { useContext, useState } from 'react';
+import { useContext, useState, useEffect, useRef } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Building2, 
-  Users, 
-  BarChart3, 
-  Settings, 
+import {
+  LayoutDashboard,
+  Building2,
+  Users,
+  BarChart3,
+  Settings,
   LogOut,
   Menu,
-  Bell
+  Bell,
+  X,
+  TrendingUp,
+  UserPlus,
 } from 'lucide-react';
-import { AuthContext } from '../context/AuthContext';
+import { AuthContext, api } from '../context/AuthContext';
+import ChatBot from './ChatBot';
 
 const Layout = () => {
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const notifRef = useRef(null);
 
-  // Define our application route mappings
   const navLinks = [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard },
-    { name: 'Accounts', path: '/accounts', icon: Building2 },
-    { name: 'Contacts', path: '/contacts', icon: Users },
+    { name: 'Dashboard',     path: '/',              icon: LayoutDashboard },
+    { name: 'Accounts',      path: '/accounts',      icon: Building2 },
+    { name: 'Contacts',      path: '/contacts',      icon: Users },
     { name: 'Opportunities', path: '/opportunities', icon: BarChart3 },
   ];
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
+  // Fetch recent activity for notifications panel
+  useEffect(() => {
+    if (!notifOpen) return;
+    const load = async () => {
+      setNotifLoading(true);
+      try {
+        const [accs, opps, contacts] = await Promise.all([
+          api.get('/accounts?limit=3'),
+          api.get('/opportunities?limit=4'),
+          api.get('/contacts?limit=3'),
+        ]);
+        const items = [
+          ...accs.data.map(a => ({ type: 'account',  label: `Account added: ${a.name}`,          sub: a.industry || 'No industry', time: a.created_at, Icon: Building2 })),
+          ...opps.data.map(o => ({ type: 'opp',      label: `Deal: ${o.name}`,                   sub: o.stage.replace('_', ' '),   time: o.created_at, Icon: TrendingUp })),
+          ...contacts.data.map(c => ({ type: 'contact', label: `Contact: ${c.first_name} ${c.last_name}`, sub: c.email || 'No email', time: c.created_at, Icon: UserPlus })),
+        ].sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 8);
+        setNotifications(items);
+      } catch {
+        setNotifications([]);
+      } finally {
+        setNotifLoading(false);
+      }
+    };
+    load();
+  }, [notifOpen]);
+
+  // Close notif panel when clicking outside
+  useEffect(() => {
+    const handler = (e) => { if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false); };
+    if (notifOpen) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [notifOpen]);
+
+  const handleLogout = async () => { await logout(); navigate('/login'); };
+
+  const typeColors = {
+    account: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
+    opp:     'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400',
+    contact: 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400',
   };
 
-  // Reusable Sidebar content component
   const SidebarContent = () => (
     <div className="flex flex-col h-full bg-white dark:bg-crmCard border-r border-slate-200 dark:border-slate-800 transition-colors duration-200">
-      
-      {/* Brand logo area */}
       <div className="h-16 flex items-center justify-center px-6 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-2 text-crmAccent font-bold text-xl tracking-tight">
           <div className="w-8 h-8 rounded-lg bg-crmAccent flex items-center justify-center text-white shadow-sm">
@@ -44,7 +84,6 @@ const Layout = () => {
         </div>
       </div>
 
-      {/* Navigation Links */}
       <div className="flex-1 overflow-y-auto py-6 px-4 space-y-1.5">
         {navLinks.map((link) => {
           const Icon = link.icon;
@@ -52,10 +91,10 @@ const Layout = () => {
             <NavLink
               key={link.name}
               to={link.path}
-              className={({ isActive }) => 
-                `flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group ` +
-                (isActive 
-                  ? `bg-blue-50 dark:bg-crmAccent/15 text-crmHover dark:text-crmAccent` 
+              className={({ isActive }) =>
+                `flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ` +
+                (isActive
+                  ? `bg-blue-50 dark:bg-crmAccent/15 text-crmHover dark:text-crmAccent`
                   : `text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100`)
               }
               end={link.path === '/'}
@@ -68,13 +107,21 @@ const Layout = () => {
         })}
       </div>
 
-      {/* Bottom section (Settings & Logout) */}
       <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-1">
-        <button className="w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all duration-200">
+        <NavLink
+          to="/settings"
+          onClick={() => setMobileMenuOpen(false)}
+          className={({ isActive }) =>
+            `w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ` +
+            (isActive
+              ? 'bg-blue-50 dark:bg-crmAccent/15 text-crmHover dark:text-crmAccent'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60')
+          }
+        >
           <Settings className="w-[18px] h-[18px] mr-3" />
           Settings
-        </button>
-        <button 
+        </NavLink>
+        <button
           onClick={handleLogout}
           className="w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-200"
         >
@@ -87,60 +134,103 @@ const Layout = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-crmDark flex transition-colors duration-200">
-      
-      {/* Desktop Sidebar (Fixed left, hidden on small screens) */}
+
+      {/* Desktop Sidebar */}
       <aside className="hidden lg:flex lg:w-64 lg:flex-col fixed inset-y-0 z-50">
         <SidebarContent />
       </aside>
 
-      {/* Mobile Sidebar overlay & drawer */}
+      {/* Mobile Sidebar */}
       {mobileMenuOpen && (
         <div className="relative z-50 lg:hidden">
-          <div 
-            className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm transition-opacity" 
-            onClick={() => setMobileMenuOpen(false)} 
-          />
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
           <div className="fixed inset-y-0 left-0 w-64 flex flex-col shadow-2xl">
             <SidebarContent />
           </div>
         </div>
       )}
 
-      {/* Main App Content Area */}
       <div className="flex-1 flex flex-col lg:pl-64 h-screen">
-        
+
         {/* Top Header */}
         <header className="h-16 flex-shrink-0 flex items-center justify-between px-4 sm:px-6 lg:px-8 bg-white/80 dark:bg-crmCard/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40 shadow-sm">
-          
           <div className="flex items-center">
-            {/* Mobile menu button */}
-            <button 
-              className="lg:hidden p-2 -ml-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-              onClick={() => setMobileMenuOpen(true)}
-            >
+            <button className="lg:hidden p-2 -ml-2 text-slate-500" onClick={() => setMobileMenuOpen(true)}>
               <Menu className="w-6 h-6" />
             </button>
           </div>
 
-          <div className="flex items-center gap-5">
-            <button className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors relative">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-crmCard"></span>
-            </button>
-            <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-crmAccent to-indigo-500 flex items-center justify-center text-white text-sm font-semibold shadow-sm cursor-pointer hover:opacity-90 transition-opacity">
-              {user?.full_name ? user.full_name.charAt(0).toUpperCase() : 'U'}
+          <div className="flex items-center gap-4" ref={notifRef}>
+            {/* Notifications Bell */}
+            <div className="relative">
+              <button
+                onClick={() => setNotifOpen(o => !o)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors relative p-1"
+              >
+                <Bell className="w-5 h-5" />
+                {notifications.length > 0 && (
+                  <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-crmCard" />
+                )}
+              </button>
+
+              {/* Notifications Panel */}
+              {notifOpen && (
+                <div className="absolute right-0 top-10 w-80 bg-white dark:bg-crmCard rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden animate-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                    <h3 className="font-semibold text-sm text-slate-800 dark:text-white">Recent Activity</h3>
+                    <button onClick={() => setNotifOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  <div className="max-h-96 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                    {notifLoading ? (
+                      <div className="flex justify-center py-8">
+                        <div className="w-6 h-6 border-2 border-crmAccent border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : notifications.length === 0 ? (
+                      <p className="text-center text-sm text-slate-400 py-8">No recent activity</p>
+                    ) : (
+                      notifications.map((n, i) => {
+                        const Icon = n.Icon;
+                        return (
+                          <div key={i} className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${typeColors[n.type]}`}>
+                              <Icon size={15} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{n.label}</p>
+                              <p className="text-xs text-slate-400 mt-0.5 truncate">{n.sub}</p>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="px-4 py-2.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30">
+                    <p className="text-xs text-center text-slate-400">Showing most recent activity</p>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* Profile Avatar */}
+            <NavLink to="/profile" title="My Profile">
+              <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-crmAccent to-indigo-500 flex items-center justify-center text-white text-sm font-semibold shadow-sm cursor-pointer hover:opacity-90 hover:ring-2 hover:ring-crmAccent hover:ring-offset-2 transition-all">
+                {user?.full_name ? user.full_name.charAt(0).toUpperCase() : 'U'}
+              </div>
+            </NavLink>
           </div>
         </header>
 
-        {/* Dynamic Page Content inside the Layout */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 w-full">
           <div className="max-w-7xl mx-auto h-full">
             <Outlet />
           </div>
         </main>
-
       </div>
+      <ChatBot />
     </div>
   );
 };

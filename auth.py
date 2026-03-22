@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 import jwt
 from jwt.exceptions import InvalidTokenError
@@ -11,65 +11,66 @@ from config import settings
 from database import get_db
 from models import User
 
-# OAuth2 scheme: Tells FastAPI where the client should send the token request
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
+# auto_error=False lets us fall back to cookie when no Authorization header is present
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login", auto_error=False)
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Check if the provided plain text password matches the hashed password in the DB"""
     try:
         return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
     except Exception:
         return False
 
+
 def get_password_hash(password: str) -> str:
-    """Hash a plain text password before storing it in the DB"""
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
+
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    """Create a new JWT access token containing the user's data (subject)"""
     to_encode = data.copy()
-    
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        
     to_encode.update({"exp": expire})
-    
-    # Encode with the secret key and designated algorithm (e.g. HS256)
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)) -> User:
+
+async def get_current_user(
+    request: Request,
+    token_from_header: str | None = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db)
+) -> User:
     """
-    FastAPI Dependency that extracts the JWT from the Authorization header,
-    validates the token, and returns the User object from the database.
-    If the token is invalid or user doesn't exist, raises 401 Unauthorized.
+    Reads JWT from httpOnly cookie first, falls back to Authorization header
+    (so Swagger UI still works in development).
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
+    token = request.cookies.get("access_token") or token_from_header
+    if not token:
+        raise credentials_exception
+
     try:
-        # Decode the token payload
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         email: str | None = payload.get("sub")
         if email is None:
             raise credentials_exception
     except InvalidTokenError:
         raise credentials_exception
-        
-    # Query database for the user with this email
+
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
-    
+
     if user is None:
         raise credentials_exception
-        
-    if not hasattr(user, "is_active") or not user.is_active:
+
+    if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user account")
-        
+
     return user
