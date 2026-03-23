@@ -5,9 +5,9 @@ from sqlalchemy import or_
 
 from auth import get_current_user
 from database import get_db
-from models import Account, Contact, User, UserRole
+from models import Account, Activity, Contact, User, UserRole
 from permissions import ROLE_RANK, require_role
-from schemas import ContactCreate, ContactUpdate, ContactResponse
+from schemas import ActivityResponse, ContactCreate, ContactUpdate, ContactResponse
 from typing import List
 
 router = APIRouter(prefix="/contacts", tags=["Contacts"])
@@ -152,3 +152,43 @@ async def delete_contact(
     await db.delete(contact)
     await db.commit()
     return None
+
+
+# ---------------------------------------------------------------------------
+# GET /contacts/{contact_id}/email-history
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{contact_id}/email-history",
+    response_model=List[ActivityResponse],
+    summary="All outbound emails logged against this contact, newest first",
+)
+async def contact_email_history(
+    contact_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Returns Activity records where ``type = 'Email'`` and
+    ``contact_id = {contact_id}``, sorted by ``created_at DESC``.
+
+    Access follows the same contact-visibility rules: the current user must
+    have access to the contact's linked account (or be Manager/Admin).
+    """
+    # Verify the caller can see this contact at all
+    await _get_contact_or_403(contact_id, current_user, db)
+
+    rows = (await db.execute(
+        select(Activity)
+        .where(
+            Activity.contact_id == contact_id,
+            Activity.type == "Email",
+        )
+        .order_by(Activity.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )).scalars().all()
+
+    return rows

@@ -253,3 +253,26 @@ class TaskRead(TaskBase):
 
     class Config:
         from_attributes = True
+
+
+# --- Activity Schemas ---
+class ActivityCreate(BaseModel):
+    type: str
+    description: str
+    account_id: int | None = None
+    contact_id: int | None = None
+    opportunity_id: int | None = None
+
+
+class ActivityResponse(BaseModel):
+    id: int
+    type: str
+    description: str
+    user_id: int
+    account_id: int | None = None
+    contact_id: int | None = None
+    opportunity_id: int | None = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
