@@ -21,11 +21,34 @@ async def run_migrations():
     Existing users get is_approved=TRUE (DEFAULT TRUE) so they aren't locked out.
     New registrations will have is_approved set to FALSE by SQLAlchemy explicitly.
     """
+    from sqlalchemy import text
     async with engine.begin() as conn:
-        await conn.execute(__import__('sqlalchemy').text(
+        await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
             "is_approved BOOLEAN NOT NULL DEFAULT TRUE"
         ))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS leads (
+                id SERIAL PRIMARY KEY,
+                first_name VARCHAR(100) NOT NULL,
+                last_name VARCHAR(100) NOT NULL,
+                email VARCHAR(255) UNIQUE,
+                phone VARCHAR(50),
+                company_name VARCHAR(255),
+                job_title VARCHAR(100),
+                lead_source VARCHAR(50) DEFAULT 'Other',
+                status VARCHAR(50) NOT NULL DEFAULT 'New',
+                notes TEXT,
+                is_converted BOOLEAN NOT NULL DEFAULT FALSE,
+                converted_at TIMESTAMPTZ,
+                converted_account_id INTEGER REFERENCES accounts(id),
+                converted_contact_id INTEGER REFERENCES contacts(id),
+                converted_opportunity_id INTEGER REFERENCES opportunities(id),
+                owner_id INTEGER REFERENCES users(id),
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
     logger.info("Startup migrations complete.")
 
 

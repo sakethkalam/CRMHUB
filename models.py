@@ -5,6 +5,23 @@ import enum
 
 from database import Base
 
+class LeadSource(str, enum.Enum):
+    WEB = "Web"
+    REFERRAL = "Referral"
+    COLD_CALL = "Cold Call"
+    EMAIL_CAMPAIGN = "Email Campaign"
+    TRADE_SHOW = "Trade Show"
+    OTHER = "Other"
+
+
+class LeadStatus(str, enum.Enum):
+    NEW = "New"
+    CONTACTED = "Contacted"
+    QUALIFIED = "Qualified"
+    UNQUALIFIED = "Unqualified"
+    CONVERTED = "Converted"
+
+
 class OpportunityStage(str, enum.Enum):
     """Stages representing our sales pipeline for the Kanban board"""
     PROSPECTING = "Prospecting"
@@ -28,6 +45,7 @@ class User(Base):
     # Relationships
     accounts = relationship("Account", back_populates="owner")
     activities = relationship("Activity", back_populates="user")
+    leads = relationship("Lead", back_populates="owner")
 
 
 class Account(Base):
@@ -87,6 +105,42 @@ class Opportunity(Base):
     # Relationships
     account = relationship("Account", back_populates="opportunities")
     activities = relationship("Activity", back_populates="opportunity")
+
+
+class Lead(Base):
+    """Represents a potential customer before they enter the sales pipeline."""
+    __tablename__ = "leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=False)
+    email = Column(String(255), unique=True, index=True)
+    phone = Column(String(50))
+    company_name = Column(String(255))
+    job_title = Column(String(100))
+
+    lead_source = Column(Enum(LeadSource), default=LeadSource.OTHER)
+    status = Column(Enum(LeadStatus), default=LeadStatus.NEW, nullable=False)
+
+    notes = Column(Text, nullable=True)
+    is_converted = Column(Boolean, default=False)
+    converted_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Conversion targets (populated when lead is converted)
+    converted_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
+    converted_contact_id = Column(Integer, ForeignKey("contacts.id"), nullable=True)
+    converted_opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
+
+    owner_id = Column(Integer, ForeignKey("users.id"))
+
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    owner = relationship("User", back_populates="leads")
+    converted_account = relationship("Account", foreign_keys=[converted_account_id])
+    converted_contact = relationship("Contact", foreign_keys=[converted_contact_id])
+    converted_opportunity = relationship("Opportunity", foreign_keys=[converted_opportunity_id])
 
 
 class Activity(Base):
