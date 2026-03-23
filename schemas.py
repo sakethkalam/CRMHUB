@@ -2,6 +2,13 @@ from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime
 
+from models import (
+    OpportunityStage, ForecastCategory,
+    LeadSource, LeadStatus,
+    TaskPriority, TaskStatus, TaskType,
+    UserRole,
+)
+
 # --- Token Schemas ---
 class Token(BaseModel):
     access_token: str
@@ -101,7 +108,6 @@ class ContactResponse(ContactBase):
         from_attributes = True
 
 # --- Opportunity Schemas ---
-from models import OpportunityStage, ForecastCategory, LeadSource, LeadStatus, TaskPriority, TaskStatus, TaskType, UserRole
 
 class OpportunityBase(BaseModel):
     name: str
