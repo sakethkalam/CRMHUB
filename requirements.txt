@@ -11,3 +11,4 @@ python-multipart
 slowapi
 anthropic
 bcrypt
+resend

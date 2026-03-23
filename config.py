@@ -65,13 +65,9 @@ class Settings(BaseSettings):
     # --- Anthropic ---
     ANTHROPIC_API_KEY: str = ""
 
-    # --- Email (Gmail SMTP) ---
-    # Use a Gmail App Password (not your real password).
-    # Generate one at: myaccount.google.com/apppasswords (requires 2FA enabled)
-    SMTP_HOST: str = "smtp.gmail.com"
-    SMTP_PORT: int = 587
-    SMTP_USER: str = ""          # e.g. yourname@gmail.com
-    SMTP_PASSWORD: str = ""      # 16-char App Password from Google
+    # --- Email (Resend) ---
+    # Sign up free at resend.com → API Keys → Create Key
+    RESEND_API_KEY: str = ""
     ADMIN_EMAIL: str = "saketh.kalam@gmail.com"
     BACKEND_URL: str = "http://localhost:8000"   # Override in Railway: https://web-production-57d8e.up.railway.app
 
