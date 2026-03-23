@@ -30,6 +30,7 @@ const Layout = () => {
     { name: 'Accounts',      path: '/accounts',      icon: Building2 },
     { name: 'Contacts',      path: '/contacts',      icon: Users },
     { name: 'Opportunities', path: '/opportunities', icon: BarChart3 },
+    { name: 'Leads',         path: '/leads',         icon: UserPlus },
   ];
 
   // Fetch recent activity for notifications panel

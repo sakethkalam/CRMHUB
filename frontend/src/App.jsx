@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Accounts from './pages/Accounts';
 import Contacts from './pages/Contacts';
 import Opportunities from './pages/Opportunities';
+import Leads from './pages/Leads';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
@@ -50,6 +51,7 @@ function App() {
             <Route path="accounts" element={<Accounts />} />
             <Route path="contacts" element={<Contacts />} />
             <Route path="opportunities" element={<Opportunities />} />
+            <Route path="leads" element={<Leads />} />
             <Route path="profile" element={<Profile />} />
             <Route path="settings" element={<Settings />} />
           </Route>
