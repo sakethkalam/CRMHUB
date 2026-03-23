@@ -90,6 +90,7 @@ class User(Base):
     is_active = Column(Boolean, default=False)   # False until admin approves
     is_approved = Column(Boolean, default=False)  # Admin must approve new registrations
     role = Column(Enum(UserRole, values_callable=lambda obj: [e.value for e in obj]), default=UserRole.SALES_REP, nullable=False)
+    region = Column(String(100), nullable=True)   # e.g. "North", "West" — used for Manager scoping
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     # Relationships
@@ -108,6 +109,7 @@ class Account(Base):
     name = Column(String(255), index=True, nullable=False)
     industry = Column(String(100))
     website = Column(String(255))
+    region = Column(String(100), nullable=True)   # e.g. "North", "West"
     owner_id = Column(Integer, ForeignKey("users.id"))
     
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

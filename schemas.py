@@ -38,6 +38,7 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     full_name: str | None = None
+    region: str | None = None
     current_password: str | None = None
     new_password: str | None = None
 
@@ -59,6 +60,7 @@ class UserResponse(UserBase):
     is_active: bool
     is_approved: bool
     role: UserRole
+    region: str | None = None
     created_at: datetime
 
     class Config:
@@ -69,6 +71,7 @@ class AccountBase(BaseModel):
     name: str
     industry: str | None = None
     website: str | None = None
+    region: str | None = None
 
 class AccountCreate(AccountBase):
     pass

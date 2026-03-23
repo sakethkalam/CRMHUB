@@ -31,6 +31,8 @@ async def run_migrations():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
             "role VARCHAR(50) NOT NULL DEFAULT 'Sales Rep'"
         ))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS region VARCHAR(100)"))
+        await conn.execute(text("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS region VARCHAR(100)"))
         # Opportunity extensions
         await conn.execute(text("ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS probability INTEGER NOT NULL DEFAULT 10"))
         await conn.execute(text("ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS forecast_category VARCHAR(50) NOT NULL DEFAULT 'Pipeline'"))

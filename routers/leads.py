@@ -7,7 +7,8 @@ from sqlalchemy.future import select
 
 from auth import get_current_user
 from database import get_db
-from models import Account, Contact, Lead, LeadSource, LeadStatus, Opportunity, OpportunityStage, User
+from models import Account, Contact, Lead, LeadSource, LeadStatus, Opportunity, OpportunityStage, User, UserRole
+from permissions import ROLE_RANK, require_role
 from schemas import (
     LeadConvertRequest,
     LeadConvertResponse,
@@ -19,31 +20,65 @@ from schemas import (
 router = APIRouter(prefix="/leads", tags=["Leads"])
 
 
-def _get_own_lead_query(lead_id: int, owner_id: int):
-    return select(Lead).where(Lead.id == lead_id, Lead.owner_id == owner_id)
+# ---------------------------------------------------------------------------
+# Role helpers
+# ---------------------------------------------------------------------------
+
+def _rank(user: User) -> int:
+    role = user.role if isinstance(user.role, UserRole) else UserRole(user.role)
+    return ROLE_RANK.get(role, 0)
+
+
+def _is_manager_or_above(user: User) -> bool:
+    return _rank(user) >= ROLE_RANK[UserRole.MANAGER]
+
+
+def _apply_lead_scope(query, current_user: User):
+    """
+    Manager/Admin see all leads.
+    Sales Rep / Read Only see only leads they own.
+    """
+    if _is_manager_or_above(current_user):
+        return query
+    return query.where(Lead.owner_id == current_user.id)
+
+
+async def _get_lead(lead_id: int, current_user: User, db: AsyncSession) -> Lead:
+    """Fetch lead with role-aware visibility; raises 404 if not visible."""
+    q = _apply_lead_scope(select(Lead).where(Lead.id == lead_id), current_user)
+    lead = (await db.execute(q)).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return lead
 
 
 # ---------------------------------------------------------------------------
 # LIST
 # ---------------------------------------------------------------------------
+
 @router.get("/", response_model=List[LeadRead])
 async def list_leads(
     status: LeadStatus | None = Query(None, description="Filter by status"),
     lead_source: LeadSource | None = Query(None, description="Filter by lead source"),
-    owner_id: int | None = Query(None, description="Filter by owner (admin use)"),
+    owner_id: int | None = Query(None, description="Filter by owner (Manager/Admin only)"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List leads owned by the current user, with optional filters."""
-    query = select(Lead).where(Lead.owner_id == current_user.id)
+    """
+    List leads scoped by role:
+    Admin / Manager → all leads (optionally filtered by owner_id);
+    Sales Rep → own leads only.
+    """
+    query = _apply_lead_scope(select(Lead), current_user)
 
     if status is not None:
         query = query.where(Lead.status == status)
     if lead_source is not None:
         query = query.where(Lead.lead_source == lead_source)
-    if owner_id is not None:
+    # owner_id filter only respected when caller has Manager-or-above rank
+    if owner_id is not None and _is_manager_or_above(current_user):
         query = query.where(Lead.owner_id == owner_id)
 
     query = query.order_by(Lead.created_at.desc()).offset(skip).limit(limit)
@@ -54,11 +89,12 @@ async def list_leads(
 # ---------------------------------------------------------------------------
 # CREATE
 # ---------------------------------------------------------------------------
+
 @router.post("/", response_model=LeadRead, status_code=status.HTTP_201_CREATED)
 async def create_lead(
     lead_in: LeadCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(UserRole.SALES_REP)),
 ):
     """Create a new lead owned by the logged-in user."""
     new_lead = Lead(**lead_in.model_dump(), owner_id=current_user.id)
@@ -71,33 +107,28 @@ async def create_lead(
 # ---------------------------------------------------------------------------
 # GET ONE
 # ---------------------------------------------------------------------------
+
 @router.get("/{lead_id}", response_model=LeadRead)
 async def get_lead(
     lead_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(_get_own_lead_query(lead_id, current_user.id))
-    lead = result.scalar_one_or_none()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    return lead
+    return await _get_lead(lead_id, current_user, db)
 
 
 # ---------------------------------------------------------------------------
 # UPDATE (PATCH)
 # ---------------------------------------------------------------------------
+
 @router.patch("/{lead_id}", response_model=LeadRead)
 async def update_lead(
     lead_id: int,
     lead_in: LeadUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(UserRole.SALES_REP)),
 ):
-    result = await db.execute(_get_own_lead_query(lead_id, current_user.id))
-    lead = result.scalar_one_or_none()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
+    lead = await _get_lead(lead_id, current_user, db)
 
     for key, value in lead_in.model_dump(exclude_unset=True).items():
         setattr(lead, key, value)
@@ -110,17 +141,14 @@ async def update_lead(
 # ---------------------------------------------------------------------------
 # DELETE
 # ---------------------------------------------------------------------------
+
 @router.delete("/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_lead(
     lead_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(UserRole.SALES_REP)),
 ):
-    result = await db.execute(_get_own_lead_query(lead_id, current_user.id))
-    lead = result.scalar_one_or_none()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-
+    lead = await _get_lead(lead_id, current_user, db)
     await db.delete(lead)
     await db.commit()
     return None
@@ -129,24 +157,20 @@ async def delete_lead(
 # ---------------------------------------------------------------------------
 # CONVERT
 # ---------------------------------------------------------------------------
+
 @router.post("/{lead_id}/convert", response_model=LeadConvertResponse)
 async def convert_lead(
     lead_id: int,
     convert_in: LeadConvertRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(UserRole.SALES_REP)),
 ):
     """
     Atomically convert a lead into an Account + Contact + (optionally) Opportunity.
-
-    - Reuses an existing Account if one with a matching name is found.
-    - All three records are linked back on the lead row.
-    - Returns 400 if the lead is already converted.
+    Sales Rep can only convert their own leads.
+    Manager / Admin can convert any lead.
     """
-    result = await db.execute(_get_own_lead_query(lead_id, current_user.id))
-    lead = result.scalar_one_or_none()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
+    lead = await _get_lead(lead_id, current_user, db)
 
     if lead.is_converted:
         raise HTTPException(status_code=400, detail="Lead has already been converted")
@@ -166,7 +190,7 @@ async def convert_lead(
     if not account:
         account = Account(name=account_name, owner_id=current_user.id)
         db.add(account)
-        await db.flush()  # populate account.id without committing
+        await db.flush()
 
     # --- Contact ---
     contact = Contact(
@@ -177,9 +201,9 @@ async def convert_lead(
         account_id=account.id,
     )
     db.add(contact)
-    await db.flush()  # populate contact.id
+    await db.flush()
 
-    # --- Opportunity (optional — only created when a name is supplied) ---
+    # --- Opportunity (optional) ---
     opportunity = None
     if convert_in.opportunity_name:
         opportunity = Opportunity(
@@ -190,9 +214,9 @@ async def convert_lead(
             account_id=account.id,
         )
         db.add(opportunity)
-        await db.flush()  # populate opportunity.id
+        await db.flush()
 
-    # --- Mark lead as converted ---
+    # --- Mark lead converted ---
     lead.is_converted = True
     lead.converted_at = datetime.now(timezone.utc)
     lead.status = LeadStatus.CONVERTED
