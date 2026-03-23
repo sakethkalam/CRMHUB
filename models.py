@@ -1,9 +1,28 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Float, Enum, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Float, Enum, Text, event
+from sqlalchemy.orm import relationship, validates
 import enum
 
 from database import Base
+
+class ForecastCategory(str, enum.Enum):
+    PIPELINE  = "Pipeline"
+    BEST_CASE = "Best Case"
+    COMMIT    = "Commit"
+    CLOSED    = "Closed"
+    OMITTED   = "Omitted"
+
+
+# Maps each stage to its default probability (0-100)
+STAGE_PROBABILITY: dict[str, int] = {
+    "Prospecting":   10,
+    "Qualification": 20,
+    "Proposal":      50,
+    "Negotiation":   75,
+    "Closed Won":   100,
+    "Closed Lost":    0,
+}
+
 
 class TaskPriority(str, enum.Enum):
     LOW    = "Low"
@@ -115,21 +134,46 @@ class Contact(Base):
 class Opportunity(Base):
     """Represents a potential deal or sale."""
     __tablename__ = "opportunities"
-    
-    id = Column(Integer, primary_key=True, index=True)
+
+    id   = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
-    amount = Column(Float, default=0.0)
-    stage = Column(Enum(OpportunityStage), default=OpportunityStage.PROSPECTING, nullable=False)
+
+    amount      = Column(Float, default=0.0)
+    stage       = Column(Enum(OpportunityStage), default=OpportunityStage.PROSPECTING, nullable=False)
+    probability = Column(Integer, default=10)   # 0-100; auto-set when stage changes
+
+    forecast_category = Column(Enum(ForecastCategory), default=ForecastCategory.PIPELINE)
+    close_reason      = Column(String(255), nullable=True)   # set on Closed Won / Closed Lost
+
     expected_close_date = Column(DateTime(timezone=True))
-    
+    stage_changed_at    = Column(DateTime(timezone=True), nullable=True)
+
     account_id = Column(Integer, ForeignKey("accounts.id"))
-    
+
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    
+
     # Relationships
-    account = relationship("Account", back_populates="opportunities")
+    account    = relationship("Account", back_populates="opportunities")
     activities = relationship("Activity", back_populates="opportunity")
+
+    # ----------------------------------------------------------------
+    # Computed property — not stored in DB
+    # ----------------------------------------------------------------
+    @property
+    def weighted_amount(self) -> float:
+        """amount * probability / 100"""
+        return round((self.amount or 0) * (self.probability or 0) / 100, 2)
+
+    # ----------------------------------------------------------------
+    # Auto-update probability + stage_changed_at when stage is set
+    # ----------------------------------------------------------------
+    @validates("stage")
+    def _on_stage_change(self, key, new_stage):
+        stage_value = new_stage.value if hasattr(new_stage, "value") else str(new_stage)
+        self.probability     = STAGE_PROBABILITY.get(stage_value, self.probability)
+        self.stage_changed_at = datetime.now(timezone.utc)
+        return new_stage
 
 
 class Lead(Base):

@@ -100,12 +100,15 @@ class ContactResponse(ContactBase):
         from_attributes = True
 
 # --- Opportunity Schemas ---
-from models import OpportunityStage, LeadSource, LeadStatus, TaskPriority, TaskStatus, TaskType
+from models import OpportunityStage, ForecastCategory, LeadSource, LeadStatus, TaskPriority, TaskStatus, TaskType
 
 class OpportunityBase(BaseModel):
     name: str
     amount: float = 0.0
     stage: OpportunityStage = OpportunityStage.PROSPECTING
+    probability: int = 10
+    forecast_category: ForecastCategory = ForecastCategory.PIPELINE
+    close_reason: str | None = None
     expected_close_date: datetime | None = None
     account_id: int | None = None
 
@@ -115,14 +118,21 @@ class OpportunityCreate(OpportunityBase):
 class OpportunityUpdate(BaseModel):
     name: str | None = None
     amount: float | None = None
+    stage: OpportunityStage | None = None
+    probability: int | None = None          # override auto-calculated value if needed
+    forecast_category: ForecastCategory | None = None
+    close_reason: str | None = None
     expected_close_date: datetime | None = None
     account_id: int | None = None
 
 class OpportunityStageUpdate(BaseModel):
     stage: OpportunityStage
+    close_reason: str | None = None         # caller can supply reason at stage change time
 
 class OpportunityResponse(OpportunityBase):
     id: int
+    weighted_amount: float = 0.0
+    stage_changed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

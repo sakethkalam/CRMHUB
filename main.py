@@ -27,6 +27,11 @@ async def run_migrations():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
             "is_approved BOOLEAN NOT NULL DEFAULT TRUE"
         ))
+        # Opportunity extensions
+        await conn.execute(text("ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS probability INTEGER NOT NULL DEFAULT 10"))
+        await conn.execute(text("ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS forecast_category VARCHAR(50) NOT NULL DEFAULT 'Pipeline'"))
+        await conn.execute(text("ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS close_reason VARCHAR(255)"))
+        await conn.execute(text("ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS stage_changed_at TIMESTAMPTZ"))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS tasks (
                 id SERIAL PRIMARY KEY,
