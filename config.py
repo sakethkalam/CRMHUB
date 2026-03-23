@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     # Sign up free at resend.com → API Keys → Create Key
     RESEND_API_KEY: str = ""
     ADMIN_EMAIL: str = "saketh.kalam@gmail.com"
-    BACKEND_URL: str = "http://localhost:8000"   # Override in Railway: https://web-production-57d8e.up.railway.app
+    BACKEND_URL: str = "https://web-production-57d8e.up.railway.app"
 
     # --- JWT Authentication ---
     # This is the secret key used to sign JWT tokens.
