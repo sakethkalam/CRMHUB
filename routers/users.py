@@ -112,7 +112,7 @@ async def logout(response: Response):
     return {"message": "Logged out successfully"}
 
 
-@router.get("/approve/{token}", response_class=HTMLResponse)
+@router.get("/approve", response_class=HTMLResponse)
 async def approve_user(token: str, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """
     Admin clicks this link from the email to approve a registration.
@@ -146,7 +146,7 @@ async def approve_user(token: str, background_tasks: BackgroundTasks, db: AsyncS
         f"{email} has been approved and can now log in. A confirmation email has been sent to them."))
 
 
-@router.get("/reject/{token}", response_class=HTMLResponse)
+@router.get("/reject", response_class=HTMLResponse)
 async def reject_user(token: str, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Admin clicks this link to reject a registration."""
     try:

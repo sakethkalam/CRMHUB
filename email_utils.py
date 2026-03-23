@@ -37,8 +37,8 @@ def send_approval_request(user_email: str, user_name: str | None) -> None:
 
     resend.api_key = settings.RESEND_API_KEY
 
-    approve_url = f"{settings.BACKEND_URL}/users/approve/{_create_approval_token(user_email, 'approve')}"
-    reject_url  = f"{settings.BACKEND_URL}/users/reject/{_create_approval_token(user_email, 'reject')}"
+    approve_url = f"{settings.BACKEND_URL}/users/approve?token={_create_approval_token(user_email, 'approve')}"
+    reject_url  = f"{settings.BACKEND_URL}/users/reject?token={_create_approval_token(user_email, 'reject')}"
     display     = user_name or user_email
 
     html = f"""
