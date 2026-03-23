@@ -120,7 +120,7 @@ async def chat(
     async def generate():
         try:
             async with async_client.messages.stream(
-                model="claude-opus-4-6",
+                model="claude-haiku-4-5",
                 max_tokens=1024,
                 system=system_prompt,
                 messages=messages,
