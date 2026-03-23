@@ -100,7 +100,7 @@ class ContactResponse(ContactBase):
         from_attributes = True
 
 # --- Opportunity Schemas ---
-from models import OpportunityStage, LeadSource, LeadStatus
+from models import OpportunityStage, LeadSource, LeadStatus, TaskPriority, TaskStatus, TaskType
 
 class OpportunityBase(BaseModel):
     name: str
@@ -189,3 +189,47 @@ class LeadConvertResponse(BaseModel):
     converted_contact_id: int
     converted_opportunity_id: int | None = None
     message: str
+
+
+# --- Task Schemas ---
+class TaskBase(BaseModel):
+    subject: str
+    description: str | None = None
+    due_date: datetime | None = None
+    priority: TaskPriority = TaskPriority.MEDIUM
+    status: TaskStatus = TaskStatus.OPEN
+    type: TaskType = TaskType.OTHER
+    assigned_to_id: int
+    related_account_id: int | None = None
+    related_contact_id: int | None = None
+    related_opportunity_id: int | None = None
+
+
+class TaskCreate(TaskBase):
+    pass
+
+
+class TaskUpdate(BaseModel):
+    subject: str | None = None
+    description: str | None = None
+    due_date: datetime | None = None
+    priority: TaskPriority | None = None
+    status: TaskStatus | None = None
+    type: TaskType | None = None
+    assigned_to_id: int | None = None
+    related_account_id: int | None = None
+    related_contact_id: int | None = None
+    related_opportunity_id: int | None = None
+
+
+class TaskRead(TaskBase):
+    id: int
+    created_by_id: int
+    assigned_to: UserResponse | None = None
+    created_by: UserResponse | None = None
+    completed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
