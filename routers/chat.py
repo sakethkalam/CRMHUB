@@ -65,8 +65,8 @@ def _build_crm_context(accounts, contacts, opportunities) -> str:
 
     # Pipeline summary
     if opportunities:
-        active = [o for o in opportunities if o.stage.value not in ("Closed Won", "Closed Lost")]
-        won = [o for o in opportunities if o.stage.value == "Closed Won"]
+        active = [o for o in opportunities if (o.stage.value if hasattr(o.stage, 'value') else str(o.stage)) not in ("Closed Won", "Closed Lost")]
+        won = [o for o in opportunities if (o.stage.value if hasattr(o.stage, 'value') else str(o.stage)) == "Closed Won"]
         total_pipeline = sum(o.amount or 0 for o in active)
         total_won = sum(o.amount or 0 for o in won)
         lines.append(f"\n=== PIPELINE SUMMARY ===")
