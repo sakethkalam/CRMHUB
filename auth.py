@@ -9,7 +9,7 @@ from sqlalchemy.future import select
 
 from config import settings
 from database import get_db
-from models import User
+from models import User, UserRole
 
 # auto_error=False lets us fall back to cookie when no Authorization header is present
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login", auto_error=False)
@@ -77,3 +77,17 @@ async def get_current_user(
         raise HTTPException(status_code=400, detail="Inactive user account")
 
     return user
+
+
+# ---------------------------------------------------------------------------
+# Convenience re-export so routers can do:
+#   from auth import get_current_user, UserRole
+# without importing from models directly.
+# ---------------------------------------------------------------------------
+__all__ = [
+    "verify_password",
+    "get_password_hash",
+    "create_access_token",
+    "get_current_user",
+    "UserRole",
+]

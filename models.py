@@ -5,6 +5,13 @@ import enum
 
 from database import Base
 
+class UserRole(str, enum.Enum):
+    ADMIN     = "Admin"
+    MANAGER   = "Manager"
+    SALES_REP = "Sales Rep"
+    READ_ONLY = "Read Only"
+
+
 class ForecastCategory(str, enum.Enum):
     PIPELINE  = "Pipeline"
     BEST_CASE = "Best Case"
@@ -82,6 +89,7 @@ class User(Base):
     full_name = Column(String(255))
     is_active = Column(Boolean, default=False)   # False until admin approves
     is_approved = Column(Boolean, default=False)  # Admin must approve new registrations
+    role = Column(Enum(UserRole), default=UserRole.SALES_REP, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     # Relationships

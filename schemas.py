@@ -51,6 +51,7 @@ class UserResponse(UserBase):
     id: int
     is_active: bool
     is_approved: bool
+    role: UserRole
     created_at: datetime
 
     class Config:
@@ -100,7 +101,7 @@ class ContactResponse(ContactBase):
         from_attributes = True
 
 # --- Opportunity Schemas ---
-from models import OpportunityStage, ForecastCategory, LeadSource, LeadStatus, TaskPriority, TaskStatus, TaskType
+from models import OpportunityStage, ForecastCategory, LeadSource, LeadStatus, TaskPriority, TaskStatus, TaskType, UserRole
 
 class OpportunityBase(BaseModel):
     name: str

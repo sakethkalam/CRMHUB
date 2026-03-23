@@ -27,6 +27,10 @@ async def run_migrations():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
             "is_approved BOOLEAN NOT NULL DEFAULT TRUE"
         ))
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+            "role VARCHAR(50) NOT NULL DEFAULT 'Sales Rep'"
+        ))
         # Opportunity extensions
         await conn.execute(text("ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS probability INTEGER NOT NULL DEFAULT 10"))
         await conn.execute(text("ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS forecast_category VARCHAR(50) NOT NULL DEFAULT 'Pipeline'"))
