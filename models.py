@@ -5,6 +5,29 @@ import enum
 
 from database import Base
 
+class TaskPriority(str, enum.Enum):
+    LOW    = "Low"
+    MEDIUM = "Medium"
+    HIGH   = "High"
+    URGENT = "Urgent"
+
+
+class TaskStatus(str, enum.Enum):
+    OPEN        = "Open"
+    IN_PROGRESS = "In Progress"
+    COMPLETED   = "Completed"
+    DEFERRED    = "Deferred"
+
+
+class TaskType(str, enum.Enum):
+    CALL          = "Call"
+    EMAIL         = "Email"
+    FOLLOW_UP     = "Follow Up"
+    DEMO          = "Demo"
+    SEND_PROPOSAL = "Send Proposal"
+    OTHER         = "Other"
+
+
 class LeadSource(str, enum.Enum):
     WEB = "Web"
     REFERRAL = "Referral"
@@ -46,6 +69,8 @@ class User(Base):
     accounts = relationship("Account", back_populates="owner")
     activities = relationship("Activity", back_populates="user")
     leads = relationship("Lead", back_populates="owner")
+    assigned_tasks = relationship("Task", back_populates="assigned_to", foreign_keys="Task.assigned_to_id")
+    created_tasks  = relationship("Task", back_populates="created_by",  foreign_keys="Task.created_by_id")
 
 
 class Account(Base):
@@ -141,6 +166,40 @@ class Lead(Base):
     converted_account = relationship("Account", foreign_keys=[converted_account_id])
     converted_contact = relationship("Contact", foreign_keys=[converted_contact_id])
     converted_opportunity = relationship("Opportunity", foreign_keys=[converted_opportunity_id])
+
+
+class Task(Base):
+    """Sales rep follow-ups and reminders linked to CRM records."""
+    __tablename__ = "tasks"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    subject     = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    due_date    = Column(DateTime(timezone=True), nullable=True)
+
+    priority = Column(Enum(TaskPriority), default=TaskPriority.MEDIUM, nullable=False)
+    status   = Column(Enum(TaskStatus),   default=TaskStatus.OPEN,     nullable=False)
+    type     = Column(Enum(TaskType),     default=TaskType.OTHER,       nullable=False)
+
+    # Ownership
+    assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_by_id  = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    # Optional CRM record links
+    related_account_id     = Column(Integer, ForeignKey("accounts.id"),     nullable=True)
+    related_contact_id     = Column(Integer, ForeignKey("contacts.id"),     nullable=True)
+    related_opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
+
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at   = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at   = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    assigned_to  = relationship("User",        back_populates="assigned_tasks", foreign_keys=[assigned_to_id])
+    created_by   = relationship("User",        back_populates="created_tasks",  foreign_keys=[created_by_id])
+    related_account     = relationship("Account",     foreign_keys=[related_account_id])
+    related_contact     = relationship("Contact",     foreign_keys=[related_contact_id])
+    related_opportunity = relationship("Opportunity", foreign_keys=[related_opportunity_id])
 
 
 class Activity(Base):

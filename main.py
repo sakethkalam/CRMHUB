@@ -28,6 +28,25 @@ async def run_migrations():
             "is_approved BOOLEAN NOT NULL DEFAULT TRUE"
         ))
         await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id SERIAL PRIMARY KEY,
+                subject VARCHAR(255) NOT NULL,
+                description TEXT,
+                due_date TIMESTAMPTZ,
+                priority VARCHAR(50) NOT NULL DEFAULT 'Medium',
+                status VARCHAR(50) NOT NULL DEFAULT 'Open',
+                type VARCHAR(50) NOT NULL DEFAULT 'Other',
+                assigned_to_id INTEGER NOT NULL REFERENCES users(id),
+                created_by_id INTEGER NOT NULL REFERENCES users(id),
+                related_account_id INTEGER REFERENCES accounts(id),
+                related_contact_id INTEGER REFERENCES contacts(id),
+                related_opportunity_id INTEGER REFERENCES opportunities(id),
+                completed_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS leads (
                 id SERIAL PRIMARY KEY,
                 first_name VARCHAR(100) NOT NULL,
