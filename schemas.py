@@ -100,7 +100,7 @@ class ContactResponse(ContactBase):
         from_attributes = True
 
 # --- Opportunity Schemas ---
-from models import OpportunityStage
+from models import OpportunityStage, LeadSource, LeadStatus
 
 class OpportunityBase(BaseModel):
     name: str
@@ -128,3 +128,64 @@ class OpportunityResponse(OpportunityBase):
 
     class Config:
         from_attributes = True
+
+
+# --- Lead Schemas ---
+class LeadBase(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr | None = None
+    phone: str | None = None
+    company_name: str | None = None
+    job_title: str | None = None
+    lead_source: LeadSource = LeadSource.OTHER
+    status: LeadStatus = LeadStatus.NEW
+    notes: str | None = None
+
+
+class LeadCreate(LeadBase):
+    pass
+
+
+class LeadUpdate(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    company_name: str | None = None
+    job_title: str | None = None
+    lead_source: LeadSource | None = None
+    status: LeadStatus | None = None
+    notes: str | None = None
+
+
+class LeadRead(LeadBase):
+    id: int
+    is_converted: bool
+    converted_at: datetime | None = None
+    converted_account_id: int | None = None
+    converted_contact_id: int | None = None
+    converted_opportunity_id: int | None = None
+    owner_id: int | None = None
+    owner: UserResponse | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class LeadConvertRequest(BaseModel):
+    account_name: str | None = None          # defaults to company_name or lead full name
+    contact_first_name: str | None = None    # defaults to lead first_name
+    contact_last_name: str | None = None     # defaults to lead last_name
+    opportunity_name: str | None = None      # defaults to "{full_name} Opportunity"
+    opportunity_amount: float = 0.0
+    opportunity_expected_close_date: datetime | None = None
+
+
+class LeadConvertResponse(BaseModel):
+    converted_account_id: int
+    converted_contact_id: int
+    converted_opportunity_id: int | None = None
+    message: str
