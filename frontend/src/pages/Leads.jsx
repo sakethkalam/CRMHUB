@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, Search, UserPlus, X, ArrowRightCircle, Trash2, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Plus, Search, UserPlus, X, ArrowRightCircle, Trash2, CheckCircle2, Phone, Mail, Building2, Briefcase, Tag, Calendar, User, ChevronRight } from 'lucide-react';
 import { api } from '../context/AuthContext';
 
 const STATUSES = ['New', 'Contacted', 'Qualified', 'Unqualified', 'Converted'];
@@ -27,12 +27,49 @@ const EMPTY_CONVERT = {
 const inputCls = 'w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-crmAccent dark:text-white transition-all placeholder:text-slate-400';
 const labelCls = 'block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5';
 
+// ── Toast component ──────────────────────────────────────
+const Toast = ({ toast, onDismiss }) => {
+  if (!toast) return null;
+  const isError = toast.type === 'error';
+  return (
+    <div
+      className={`fixed bottom-6 right-6 z-[60] flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-semibold border transition-all animate-in slide-in-from-bottom-4 duration-300 ${
+        isError
+          ? 'bg-red-50 dark:bg-red-900/80 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700'
+          : 'bg-emerald-50 dark:bg-emerald-900/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700'
+      }`}
+    >
+      {isError ? <X size={16} /> : <CheckCircle2 size={16} />}
+      {toast.message}
+      <button onClick={onDismiss} className="ml-2 opacity-60 hover:opacity-100 transition-opacity">
+        <X size={14} />
+      </button>
+    </div>
+  );
+};
+
+// ── Detail row helper ────────────────────────────────────
+const DetailRow = ({ icon: Icon, label, value }) => (
+  <div className="flex items-start gap-3 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
+    <Icon size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />
+    <div className="min-w-0">
+      <p className="text-xs text-slate-400 mb-0.5">{label}</p>
+      <p className="text-sm font-medium text-slate-900 dark:text-slate-100 break-words">
+        {value || <span className="text-slate-400 font-normal">—</span>}
+      </p>
+    </div>
+  </div>
+);
+
 const Leads = () => {
   const [leads, setLeads]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState('');
   const [statusFilter, setStatus]   = useState('');
   const [sourceFilter, setSource]   = useState('');
+
+  // Detail drawer
+  const [selectedLead, setSelectedLead] = useState(null);
 
   // Create modal
   const [createOpen, setCreateOpen] = useState(false);
@@ -41,11 +78,24 @@ const Leads = () => {
   const [formError, setFormError]   = useState('');
 
   // Convert modal
-  const [convertLead, setConvertLead]   = useState(null); // lead object being converted
+  const [convertLead, setConvertLead]   = useState(null);
   const [convertForm, setConvertForm]   = useState(EMPTY_CONVERT);
   const [converting, setConverting]     = useState(false);
-  const [convertResult, setConvertResult] = useState(null); // success response
+  const [convertResult, setConvertResult] = useState(null);
   const [convertError, setConvertError] = useState('');
+
+  // Toast
+  const [toast, setToast] = useState(null);
+
+  const showToast = useCallback((message, type = 'success') => {
+    setToast({ message, type });
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const fetchLeads = async () => {
     setLoading(true);
@@ -64,7 +114,15 @@ const Leads = () => {
 
   useEffect(() => { fetchLeads(); }, [statusFilter, sourceFilter]);
 
-  // Client-side name/company search
+  // Keep drawer in sync after refresh
+  useEffect(() => {
+    if (selectedLead) {
+      const updated = leads.find(l => l.id === selectedLead.id);
+      if (updated) setSelectedLead(updated);
+    }
+  }, [leads]);
+
+  // Client-side search
   const visible = leads.filter(l => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -85,6 +143,7 @@ const Leads = () => {
       setCreateOpen(false);
       setFormData(EMPTY_FORM);
       fetchLeads();
+      showToast('Lead created successfully.');
     } catch (err) {
       setFormError(err.response?.data?.detail || 'Failed to create lead.');
     } finally {
@@ -93,18 +152,22 @@ const Leads = () => {
   };
 
   // --- Delete ---
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this lead? This cannot be undone.')) return;
+  const handleDelete = async (lead, e) => {
+    e?.stopPropagation();
+    if (!window.confirm(`Delete ${lead.first_name} ${lead.last_name}? This cannot be undone.`)) return;
     try {
-      await api.delete(`/leads/${id}`);
+      await api.delete(`/leads/${lead.id}`);
+      if (selectedLead?.id === lead.id) setSelectedLead(null);
       fetchLeads();
+      showToast('Lead deleted.');
     } catch {
-      alert('Failed to delete lead.');
+      showToast('Failed to delete lead.', 'error');
     }
   };
 
   // --- Convert ---
-  const openConvert = (lead) => {
+  const openConvert = (lead, e) => {
+    e?.stopPropagation();
     setConvertLead(lead);
     setConvertForm({
       ...EMPTY_CONVERT,
@@ -132,6 +195,7 @@ const Leads = () => {
       const res = await api.post(`/leads/${convertLead.id}/convert`, payload);
       setConvertResult(res.data);
       fetchLeads();
+      showToast(`${convertLead.first_name} ${convertLead.last_name} converted successfully!`);
     } catch (err) {
       setConvertError(err.response?.data?.detail || 'Conversion failed.');
     } finally {
@@ -143,6 +207,9 @@ const Leads = () => {
 
   return (
     <div className="space-y-6">
+
+      {/* Toast */}
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -164,7 +231,6 @@ const Leads = () => {
 
       {/* Toolbar */}
       <div className="bg-white dark:bg-crmCard p-3 sm:p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-3 transition-colors">
-        {/* Search */}
         <div className="relative flex-1 min-w-[180px] max-w-sm">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
           <input
@@ -176,7 +242,6 @@ const Leads = () => {
           />
         </div>
 
-        {/* Status filter pills */}
         <div className="flex flex-wrap gap-1.5">
           <button
             onClick={() => setStatus('')}
@@ -195,7 +260,6 @@ const Leads = () => {
           ))}
         </div>
 
-        {/* Source filter */}
         <select
           value={sourceFilter}
           onChange={e => setSource(e.target.value)}
@@ -217,6 +281,7 @@ const Leads = () => {
                 <th className="px-6 py-3.5 font-semibold">Email</th>
                 <th className="px-6 py-3.5 font-semibold">Source</th>
                 <th className="px-6 py-3.5 font-semibold">Status</th>
+                <th className="px-6 py-3.5 font-semibold">Owner</th>
                 <th className="px-6 py-3.5 font-semibold">Created</th>
                 <th className="px-6 py-3.5 font-semibold text-right">Actions</th>
               </tr>
@@ -224,7 +289,7 @@ const Leads = () => {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan="8" className="px-6 py-12 text-center text-slate-500">
                     <div className="flex flex-col items-center gap-2">
                       <div className="w-6 h-6 border-2 border-crmAccent border-t-transparent rounded-full animate-spin" />
                       <p className="text-sm">Loading leads...</p>
@@ -233,15 +298,22 @@ const Leads = () => {
                 </tr>
               ) : visible.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center text-slate-400 text-sm">
+                  <td colSpan="8" className="px-6 py-12 text-center text-slate-400 text-sm">
                     No leads found. Create your first lead to get started.
                   </td>
                 </tr>
               ) : (
                 visible.map(lead => (
-                  <tr key={lead.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group">
+                  <tr
+                    key={lead.id}
+                    onClick={() => setSelectedLead(lead)}
+                    className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group cursor-pointer ${selectedLead?.id === lead.id ? 'bg-blue-50/60 dark:bg-blue-900/10' : ''} ${lead.is_converted ? 'opacity-60' : ''}`}
+                  >
                     <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-100">
-                      {lead.first_name} {lead.last_name}
+                      <div className="flex items-center gap-2">
+                        {lead.first_name} {lead.last_name}
+                        <ChevronRight size={14} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
                       {lead.job_title && (
                         <p className="text-xs text-slate-400 font-normal mt-0.5">{lead.job_title}</p>
                       )}
@@ -262,6 +334,9 @@ const Leads = () => {
                         {lead.status}
                       </span>
                     </td>
+                    <td className="px-6 py-4 text-slate-500 dark:text-slate-400 text-xs">
+                      {lead.owner?.full_name || <span className="text-slate-400">—</span>}
+                    </td>
                     <td className="px-6 py-4 text-slate-400 text-xs">
                       {new Date(lead.created_at).toLocaleDateString()}
                     </td>
@@ -269,7 +344,7 @@ const Leads = () => {
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                         {!lead.is_converted && (
                           <button
-                            onClick={() => openConvert(lead)}
+                            onClick={(e) => openConvert(lead, e)}
                             title="Convert lead"
                             className="p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md transition-colors"
                           >
@@ -282,7 +357,7 @@ const Leads = () => {
                           </span>
                         )}
                         <button
-                          onClick={() => handleDelete(lead.id)}
+                          onClick={(e) => handleDelete(lead, e)}
                           title="Delete lead"
                           className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
                         >
@@ -297,6 +372,90 @@ const Leads = () => {
           </table>
         </div>
       </div>
+
+      {/* ── Detail Drawer ──────────────────────────────────────── */}
+      {selectedLead && (
+        <>
+          {/* Backdrop (mobile / click-away) */}
+          <div
+            className="fixed inset-0 z-30 bg-slate-900/30 backdrop-blur-[2px] lg:hidden"
+            onClick={() => setSelectedLead(null)}
+          />
+          <div className="fixed inset-y-0 right-0 z-40 w-full max-w-sm bg-white dark:bg-crmCard shadow-2xl border-l border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
+
+            {/* Drawer header */}
+            <div className="flex items-start justify-between p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 flex-shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-crmAccent/10 text-crmAccent flex items-center justify-center font-bold text-sm flex-shrink-0">
+                  {selectedLead.first_name[0]}{selectedLead.last_name[0]}
+                </div>
+                <div className="min-w-0">
+                  <h2 className="font-bold text-slate-900 dark:text-white truncate">
+                    {selectedLead.first_name} {selectedLead.last_name}
+                  </h2>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[selectedLead.status] || ''}`}>
+                    {selectedLead.status}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedLead(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 transition flex-shrink-0"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Drawer body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-1">
+              <DetailRow icon={Briefcase} label="Job Title" value={selectedLead.job_title} />
+              <DetailRow icon={Building2} label="Company" value={selectedLead.company_name} />
+              <DetailRow icon={Mail} label="Email" value={selectedLead.email} />
+              <DetailRow icon={Phone} label="Phone" value={selectedLead.phone} />
+              <DetailRow icon={Tag} label="Lead Source" value={selectedLead.lead_source} />
+              <DetailRow icon={User} label="Owner" value={selectedLead.owner?.full_name} />
+              <DetailRow icon={Calendar} label="Created" value={new Date(selectedLead.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })} />
+
+              {selectedLead.notes && (
+                <div className="pt-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Notes</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-100 dark:border-slate-800">
+                    {selectedLead.notes}
+                  </p>
+                </div>
+              )}
+
+              {selectedLead.is_converted && (
+                <div className="mt-4 p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-purple-500" />
+                  <p className="text-xs font-semibold text-purple-700 dark:text-purple-300">
+                    Converted {selectedLead.converted_at ? `on ${new Date(selectedLead.converted_at).toLocaleDateString()}` : ''}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Drawer footer actions */}
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 flex-shrink-0 flex gap-2">
+              {!selectedLead.is_converted && (
+                <button
+                  onClick={(e) => openConvert(selectedLead, e)}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
+                >
+                  <ArrowRightCircle size={16} /> Convert Lead
+                </button>
+              )}
+              <button
+                onClick={(e) => handleDelete(selectedLead, e)}
+                className="px-3 py-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                title="Delete lead"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* ── Create Modal ─────────────────────────────────────── */}
       {createOpen && (
@@ -401,7 +560,6 @@ const Leads = () => {
             </div>
 
             {convertResult ? (
-              /* Success state */
               <div className="p-8 flex flex-col items-center text-center gap-4">
                 <div className="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
                   <CheckCircle2 size={32} className="text-emerald-500" />
@@ -445,7 +603,7 @@ const Leads = () => {
                   </div>
                 </div>
 
-                {/* Opportunity (optional) */}
+                {/* Opportunity */}
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Opportunity <span className="text-slate-300 dark:text-slate-600 font-normal normal-case">(optional)</span></p>
                   <p className="text-xs text-slate-400 mb-3">Leave Opportunity Name blank to skip creating a deal.</p>
