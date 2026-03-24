@@ -1,3 +1,5 @@
+from typing import List
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -172,6 +174,20 @@ async def reject_user(token: str, background_tasks: BackgroundTasks, db: AsyncSe
 
     return HTMLResponse(_html_page("Account Rejected",
         f"{email} has been rejected. A notification email has been sent to them.", error=True))
+
+
+@router.get("/", response_model=List[UserResponse])
+async def list_users(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all active approved users — used by front-end pickers (e.g. Assigned To)."""
+    result = await db.execute(
+        select(User)
+        .where(User.is_active == True, User.is_approved == True)
+        .order_by(User.full_name)
+    )
+    return result.scalars().all()
 
 
 @router.get("/me", response_model=UserResponse)

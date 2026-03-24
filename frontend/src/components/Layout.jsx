@@ -12,18 +12,30 @@ import {
   X,
   TrendingUp,
   UserPlus,
+  CheckSquare,
+  ChevronDown,
 } from 'lucide-react';
 import { AuthContext, api } from '../context/AuthContext';
 import ChatBot from './ChatBot';
+import MyTasksWidget from './MyTasksWidget';
 
 const Layout = () => {
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const [notifLoading, setNotifLoading] = useState(false);
+  const [notifOpen, setNotifOpen]           = useState(false);
+  const [notifications, setNotifications]   = useState([]);
+  const [notifLoading, setNotifLoading]     = useState(false);
+  const [myTasksOpen, setMyTasksOpen]       = useState(false);
+  const [overdueBadge, setOverdueBadge]     = useState(0);
   const notifRef = useRef(null);
+
+  // Fetch overdue count for nav badge
+  useEffect(() => {
+    api.get('/tasks/overdue?limit=50')
+      .then(res => setOverdueBadge(res.data.length))
+      .catch(() => {});
+  }, []);
 
   const navLinks = [
     { name: 'Dashboard',     path: '/',              icon: LayoutDashboard },
@@ -31,6 +43,7 @@ const Layout = () => {
     { name: 'Contacts',      path: '/contacts',      icon: Users },
     { name: 'Opportunities', path: '/opportunities', icon: BarChart3 },
     { name: 'Leads',         path: '/leads',         icon: UserPlus },
+    { name: 'Tasks',         path: '/tasks',         icon: CheckSquare, badge: overdueBadge },
   ];
 
   // Fetch recent activity for notifications panel
@@ -76,6 +89,7 @@ const Layout = () => {
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full bg-white dark:bg-crmCard border-r border-slate-200 dark:border-slate-800 transition-colors duration-200">
+      {/* Logo */}
       <div className="h-16 flex items-center justify-center px-6 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-2 text-crmAccent font-bold text-xl tracking-tight">
           <div className="w-8 h-8 rounded-lg bg-crmAccent flex items-center justify-center text-white shadow-sm">
@@ -85,7 +99,8 @@ const Layout = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-6 px-4 space-y-1.5">
+      {/* Nav links */}
+      <div className="flex-1 overflow-y-auto py-4 px-4 space-y-0.5">
         {navLinks.map((link) => {
           const Icon = link.icon;
           return (
@@ -102,12 +117,39 @@ const Layout = () => {
               onClick={() => setMobileMenuOpen(false)}
             >
               <Icon className="w-[18px] h-[18px] mr-3 flex-shrink-0" />
-              {link.name}
+              <span className="flex-1">{link.name}</span>
+              {link.badge > 0 && (
+                <span className="ml-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none">
+                  {link.badge > 99 ? '99+' : link.badge}
+                </span>
+              )}
             </NavLink>
           );
         })}
+
+        {/* My Tasks widget */}
+        <div className="pt-3 mt-1 border-t border-slate-100 dark:border-slate-800">
+          <button
+            onClick={() => setMyTasksOpen(o => !o)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+          >
+            <span className="flex items-center gap-2 uppercase tracking-wider">
+              <CheckSquare size={13} /> My Tasks
+            </span>
+            <ChevronDown
+              size={13}
+              className={`transition-transform duration-200 ${myTasksOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {myTasksOpen && (
+            <div className="mt-1">
+              <MyTasksWidget />
+            </div>
+          )}
+        </div>
       </div>
 
+      {/* Bottom nav */}
       <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-1">
         <NavLink
           to="/settings"
@@ -174,7 +216,6 @@ const Layout = () => {
                 )}
               </button>
 
-              {/* Notifications Panel */}
               {notifOpen && (
                 <div className="absolute right-0 top-10 w-80 bg-white dark:bg-crmCard rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden animate-in slide-in-from-top-2 duration-200">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">

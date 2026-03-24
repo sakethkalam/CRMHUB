@@ -8,7 +8,8 @@ from sqlalchemy.future import select
 
 from auth import get_current_user
 from database import get_db
-from models import Task, TaskStatus, TaskPriority, User
+from models import Task, TaskStatus, TaskPriority, User, UserRole
+from permissions import ROLE_RANK
 from schemas import TaskCreate, TaskRead, TaskUpdate
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
@@ -92,6 +93,9 @@ async def list_tasks(
     status: TaskStatus | None = Query(None),
     priority: TaskPriority | None = Query(None),
     assigned_to_id: int | None = Query(None),
+    related_account_id: int | None = Query(None),
+    related_contact_id: int | None = Query(None),
+    related_opportunity_id: int | None = Query(None),
     due_date_before: datetime | None = Query(None, description="ISO 8601 — return tasks due before this datetime"),
     due_date_after: datetime | None = Query(None, description="ISO 8601 — return tasks due after this datetime"),
     skip: int = Query(0, ge=0),
@@ -99,13 +103,22 @@ async def list_tasks(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List tasks the current user created or is assigned to, with optional filters."""
-    query = select(Task).where(
-        or_(
-            Task.assigned_to_id == current_user.id,
-            Task.created_by_id == current_user.id,
+    """
+    List tasks. Manager/Admin see all tasks; Sales Rep / Read Only see tasks they
+    created or are assigned to. Optional filters by status, priority, related record, etc.
+    """
+    role = current_user.role if isinstance(current_user.role, UserRole) else UserRole(current_user.role)
+    is_manager_plus = ROLE_RANK.get(role, 0) >= ROLE_RANK[UserRole.MANAGER]
+
+    if is_manager_plus:
+        query = select(Task)
+    else:
+        query = select(Task).where(
+            or_(
+                Task.assigned_to_id == current_user.id,
+                Task.created_by_id == current_user.id,
+            )
         )
-    )
 
     if status is not None:
         query = query.where(Task.status == status)
@@ -113,6 +126,12 @@ async def list_tasks(
         query = query.where(Task.priority == priority)
     if assigned_to_id is not None:
         query = query.where(Task.assigned_to_id == assigned_to_id)
+    if related_account_id is not None:
+        query = query.where(Task.related_account_id == related_account_id)
+    if related_contact_id is not None:
+        query = query.where(Task.related_contact_id == related_contact_id)
+    if related_opportunity_id is not None:
+        query = query.where(Task.related_opportunity_id == related_opportunity_id)
     if due_date_before is not None:
         query = query.where(Task.due_date <= due_date_before)
     if due_date_after is not None:
