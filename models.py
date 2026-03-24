@@ -179,7 +179,7 @@ class Opportunity(Base):
     stage       = Column(Enum(OpportunityStage), default=OpportunityStage.PROSPECTING, nullable=False)
     probability = Column(Integer, default=10)   # 0-100; auto-set when stage changes
 
-    forecast_category = Column(Enum(ForecastCategory), default=ForecastCategory.PIPELINE)
+    forecast_category = Column(Enum(ForecastCategory, values_callable=lambda obj: [e.value for e in obj]), default=ForecastCategory.PIPELINE)
     close_reason      = Column(String(255), nullable=True)   # set on Closed Won / Closed Lost
 
     expected_close_date = Column(DateTime(timezone=True))
@@ -225,8 +225,8 @@ class Lead(Base):
     company_name = Column(String(255))
     job_title = Column(String(100))
 
-    lead_source = Column(Enum(LeadSource), default=LeadSource.OTHER)
-    status = Column(Enum(LeadStatus), default=LeadStatus.NEW, nullable=False)
+    lead_source = Column(Enum(LeadSource, values_callable=lambda obj: [e.value for e in obj]), default=LeadSource.OTHER)
+    status = Column(Enum(LeadStatus, values_callable=lambda obj: [e.value for e in obj]), default=LeadStatus.NEW, nullable=False)
 
     notes = Column(Text, nullable=True)
     is_converted = Column(Boolean, default=False)
@@ -258,9 +258,9 @@ class Task(Base):
     description = Column(Text, nullable=True)
     due_date    = Column(DateTime(timezone=True), nullable=True)
 
-    priority = Column(Enum(TaskPriority), default=TaskPriority.MEDIUM, nullable=False)
-    status   = Column(Enum(TaskStatus),   default=TaskStatus.OPEN,     nullable=False)
-    type     = Column(Enum(TaskType),     default=TaskType.OTHER,       nullable=False)
+    priority = Column(Enum(TaskPriority, values_callable=lambda obj: [e.value for e in obj]), default=TaskPriority.MEDIUM, nullable=False)
+    status   = Column(Enum(TaskStatus,   values_callable=lambda obj: [e.value for e in obj]), default=TaskStatus.OPEN,     nullable=False)
+    type     = Column(Enum(TaskType,     values_callable=lambda obj: [e.value for e in obj]), default=TaskType.OTHER,       nullable=False)
 
     # Ownership
     assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=False)
