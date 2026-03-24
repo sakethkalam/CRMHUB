@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import insert as sa_insert, or_
+from sqlalchemy import delete as sa_delete, func, insert as sa_insert, or_, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from auth import get_current_user
 from database import get_db
-from models import Account, User, UserRole
+from models import Account, Activity, Contact, Opportunity, OpportunityStage, User, UserRole
 from permissions import ROLE_RANK, require_role
 from schemas import AccountCreate, AccountUpdate, AccountResponse
 from services.audit_service import log_change, snapshot
@@ -199,22 +199,127 @@ async def update_account(
     return account
 
 
-@router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{account_id}", status_code=status.HTTP_200_OK)
 async def delete_account(
     account_id: int,
+    force: bool = Query(False, description="Unlink contacts and proceed even if the account has active contacts"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.SALES_REP)),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Delete an account.
-    - Sales Rep: only accounts they own.
-    - Manager / Admin: any account in their visibility scope.
+    Delete an account with dependency safety checks.
+
+    RBAC: Admin or Manager only — Sales Rep receives 403.
+
+    Blocking (409): account has open (non-closed) opportunities.
+    Soft-block (409 unless force=true): account has linked contacts.
+
+    With force=true the endpoint:
+      - Unlinks all contacts (sets account_id = NULL, does NOT delete them)
+      - Deletes all activities linked to this account
+      - Deletes all closed opportunities linked to this account
+      - Deletes the account
+    Returns 200 with a summary of what was removed/unlinked.
     """
+    # ── STEP 4: RBAC ────────────────────────────────────────────────────────
+    if _rank(current_user) < ROLE_RANK[UserRole.MANAGER]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to delete accounts.",
+        )
+
+    # Verify the account exists and is visible to this user
     account = await _get_account(account_id, current_user, db)
+
+    closed_stages = (OpportunityStage.CLOSED_WON, OpportunityStage.CLOSED_LOST)
+
+    # ── STEP 1: Blocking dependency check ───────────────────────────────────
+    open_opps_count: int = (await db.execute(
+        select(func.count(Opportunity.id)).where(
+            Opportunity.account_id == account_id,
+            Opportunity.stage.notin_(closed_stages),
+        )
+    )).scalar_one()
+
+    if open_opps_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "detail": (
+                    f"Cannot delete account. It has {open_opps_count} open "
+                    f"{'opportunity' if open_opps_count == 1 else 'opportunities'}. "
+                    "Close or reassign them first."
+                ),
+                "open_opportunities": open_opps_count,
+            },
+        )
+
+    # ── STEP 2: Gather warn-info counts ─────────────────────────────────────
+    # (Contact has no is_active column, so active_contacts == contacts_count)
+    contacts_count: int = (await db.execute(
+        select(func.count(Contact.id)).where(Contact.account_id == account_id)
+    )).scalar_one()
+
+    closed_opps_count: int = (await db.execute(
+        select(func.count(Opportunity.id)).where(
+            Opportunity.account_id == account_id,
+            Opportunity.stage.in_(closed_stages),
+        )
+    )).scalar_one()
+
+    activities_count: int = (await db.execute(
+        select(func.count(Activity.id)).where(Activity.account_id == account_id)
+    )).scalar_one()
+
+    # ── STEP 3: Soft-block on contacts unless force=true ────────────────────
+    if not force and contacts_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "detail": (
+                    f"Account has {contacts_count} "
+                    f"{'contact' if contacts_count == 1 else 'contacts'}. "
+                    "Pass ?force=true to delete anyway (contacts will be unlinked, not deleted)."
+                ),
+                "contacts_count": contacts_count,
+            },
+        )
+
+    # ── DELETE (single transaction) ──────────────────────────────────────────
     old = snapshot(account)
+
+    # 1. Unlink contacts (detach before account delete to prevent cascade)
+    if contacts_count > 0:
+        await db.execute(
+            sa_update(Contact)
+            .where(Contact.account_id == account_id)
+            .values(account_id=None)
+        )
+
+    # 2. Delete activities linked to this account
+    await db.execute(sa_delete(Activity).where(Activity.account_id == account_id))
+
+    # 3. Delete closed opportunities (open ones were blocked above)
+    await db.execute(
+        sa_delete(Opportunity).where(
+            Opportunity.account_id == account_id,
+            Opportunity.stage.in_(closed_stages),
+        )
+    )
+
+    # 4. Delete the account itself
     await db.delete(account)
-    await log_change(db, table_name="accounts", record_id=account_id,
-                     action="DELETE", old_values=old,
-                     user_id=current_user.id, user_email=current_user.email)
+
+    await log_change(
+        db, table_name="accounts", record_id=account_id,
+        action="DELETE", old_values=old,
+        user_id=current_user.id, user_email=current_user.email,
+    )
     await db.commit()
-    return None
+
+    return {
+        "message": "Account deleted.",
+        "unlinked_contacts": contacts_count,
+        "deleted_activities": activities_count,
+        "deleted_closed_opportunities": closed_opps_count,
+    }
