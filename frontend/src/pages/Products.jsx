@@ -520,10 +520,10 @@ const Products = () => {
   }, [toast]);
 
   // ── Derived from hierarchy ─────────────────────────────────
-  const allCategories = useMemo(() => hierarchy.map(h => h.category), [hierarchy]);
+  const allCategories = useMemo(() => hierarchy, [hierarchy]);
 
   const allFamilies = useMemo(() =>
-    hierarchy.flatMap(h => h.families.map(f => ({ ...f.family, category_id: h.category.id }))),
+    hierarchy.flatMap(h => h.families.map(f => ({ ...f, category_id: h.id }))),
   [hierarchy]);
 
   const filteredFamiliesForFilter = useMemo(() =>
@@ -549,7 +549,7 @@ const Products = () => {
   useEffect(() => {
     if (hierarchy.length > 0 && Object.keys(expanded).length === 0) {
       const init = {};
-      hierarchy.forEach(h => { init[`cat-${h.category.id}`] = true; });
+      hierarchy.forEach(h => { init[`cat-${h.id}`] = true; });
       setExpanded(init);
     }
   }, [hierarchy]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -821,7 +821,7 @@ const Products = () => {
             </div>
           ) : (
             <div className="p-4 space-y-2">
-              {hierarchy.map(({ category, families }) => {
+              {hierarchy.map((category) => {
                 const catKey    = `cat-${category.id}`;
                 const isCatOpen = !!expanded[catKey];
 
@@ -840,7 +840,7 @@ const Products = () => {
                       {!category.is_active && (
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400">Inactive</span>
                       )}
-                      <span className="text-xs text-slate-400 mr-2">{families.length} families</span>
+                      <span className="text-xs text-slate-400 mr-2">{category.families.length} families</span>
                       <button
                         onClick={() => setFamilyDrawer({ mode: 'create', defaultCategoryId: category.id })}
                         className="text-xs font-medium text-crmAccent hover:text-crmHover flex items-center gap-1 px-2 py-1 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
@@ -858,11 +858,12 @@ const Products = () => {
                     {/* ── Families (animated) ── */}
                     <div style={{ display: 'grid', gridTemplateRows: isCatOpen ? '1fr' : '0fr', transition: 'grid-template-rows 0.2s ease' }}>
                       <div style={{ overflow: 'hidden' }}>
-                        {families.length === 0 ? (
+                        {category.families.length === 0 ? (
                           <p className="px-12 py-4 text-sm text-slate-400 italic">No families yet.</p>
                         ) : (
                           <div className="divide-y divide-slate-100 dark:divide-slate-700/50">
-                            {families.map(({ family, products: famProds }) => {
+                            {category.families.map((family) => {
+                              const famProds   = family.products || [];
                               const famKey    = `fam-${family.id}`;
                               const isFamOpen = !!expanded[famKey];
 
