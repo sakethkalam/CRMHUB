@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy import insert as sa_insert, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 
 from auth import get_current_user
 from database import get_db
@@ -58,6 +59,30 @@ async def _get_contact_or_403(contact_id: int, current_user: User, db: AsyncSess
     if contact.account_id:
         await _verify_account_access(contact.account_id, current_user, db)
     return contact
+
+
+async def _contact_with_account(contact_id: int, db: AsyncSession) -> Contact:
+    """Re-fetch a contact with its account relationship loaded for response serialisation."""
+    result = await db.execute(
+        select(Contact)
+        .where(Contact.id == contact_id)
+        .options(selectinload(Contact.account))
+    )
+    return result.scalar_one_or_none()
+
+
+def _contact_dict(c: Contact) -> dict:
+    """Serialise a Contact ORM object (with account loaded) to a response dict."""
+    return {
+        "id":           c.id,
+        "first_name":   c.first_name,
+        "last_name":    c.last_name,
+        "email":        c.email,
+        "phone":        c.phone,
+        "account_id":   c.account_id,
+        "account_name": c.account.name if c.account else None,
+        "created_at":   c.created_at,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -193,8 +218,7 @@ async def create_contact(
                      action="CREATE", new_values=snapshot(new_contact),
                      user_id=current_user.id, user_email=current_user.email)
     await db.commit()
-    await db.refresh(new_contact)
-    return new_contact
+    return _contact_dict(await _contact_with_account(new_contact.id, db))
 
 
 @router.get("/", response_model=List[ContactResponse])
@@ -224,8 +248,10 @@ async def list_contacts(
     if account_id:
         query = query.where(Contact.account_id == account_id)
 
-    result = await db.execute(query.offset(skip).limit(limit))
-    return result.scalars().all()
+    result = await db.execute(
+        query.offset(skip).limit(limit).options(selectinload(Contact.account))
+    )
+    return [_contact_dict(c) for c in result.scalars().all()]
 
 
 @router.get("/{contact_id}", response_model=ContactResponse)
@@ -234,7 +260,8 @@ async def get_contact(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await _get_contact_or_403(contact_id, current_user, db)
+    await _get_contact_or_403(contact_id, current_user, db)  # access check
+    return _contact_dict(await _contact_with_account(contact_id, db))
 
 
 @router.put("/{contact_id}", response_model=ContactResponse)
@@ -257,8 +284,7 @@ async def update_contact(
                      action="UPDATE", old_values=old, new_values=snapshot(contact),
                      user_id=current_user.id, user_email=current_user.email)
     await db.commit()
-    await db.refresh(contact)
-    return contact
+    return _contact_dict(await _contact_with_account(contact_id, db))
 
 
 @router.delete("/{contact_id}", status_code=status.HTTP_204_NO_CONTENT)

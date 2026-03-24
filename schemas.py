@@ -157,6 +157,7 @@ class ContactUpdate(ContactBase):
 class ContactResponse(ContactBase):
     id: int
     created_at: datetime
+    account_name: str | None = None  # joined from account relationship
 
     class Config:
         from_attributes = True

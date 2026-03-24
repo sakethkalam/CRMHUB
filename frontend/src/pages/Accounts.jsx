@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Building2, X, Globe, Tag, User, Calendar } from 'lucide-react';
+import { Plus, Search, Building2, X, Globe, Tag, User, Calendar, Users, Mail, Phone, Link } from 'lucide-react';
 import { api } from '../context/AuthContext';
 import TasksTab from '../components/TasksTab';
 
 const inputCls = 'w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-crmAccent dark:text-white transition-all placeholder:text-slate-400';
 const labelCls = 'block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5';
 
-const TABS = ['Details', 'Tasks'];
+const TABS = ['Details', 'Contacts', 'Tasks'];
 
 const DetailRow = ({ icon: Icon, label, value }) => (
   <div className="flex items-start gap-3 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
@@ -20,6 +20,163 @@ const DetailRow = ({ icon: Icon, label, value }) => (
   </div>
 );
 
+// ── Contacts tab for an account ──────────────────────────
+const AccountContactsTab = ({ account }) => {
+  const [contacts, setContacts]       = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [addOpen, setAddOpen]         = useState(false);
+  const [addForm, setAddForm]         = useState({ first_name: '', last_name: '', email: '', phone: '' });
+  const [addSaving, setAddSaving]     = useState(false);
+  const [addError, setAddError]       = useState('');
+
+  const fetchContacts = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/contacts/?account_id=${account.id}&limit=100`);
+      setContacts(res.data);
+    } catch {
+      setContacts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchContacts(); }, [account.id]);
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    setAddSaving(true);
+    setAddError('');
+    try {
+      await api.post('/contacts/', { ...addForm, account_id: account.id });
+      setAddOpen(false);
+      setAddForm({ first_name: '', last_name: '', email: '', phone: '' });
+      fetchContacts();
+    } catch (err) {
+      setAddError(err.response?.data?.detail || 'Failed to add contact.');
+    } finally {
+      setAddSaving(false);
+    }
+  };
+
+  const handleUnlink = async (contact) => {
+    if (!window.confirm(`Remove ${contact.first_name} ${contact.last_name} from this account?`)) return;
+    try {
+      await api.put(`/contacts/${contact.id}`, {
+        first_name: contact.first_name,
+        last_name:  contact.last_name,
+        account_id: null,
+      });
+      fetchContacts();
+    } catch { /* silent */ }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-8">
+        <div className="w-5 h-5 border-2 border-crmAccent border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+          {contacts.length} Contact{contacts.length !== 1 ? 's' : ''}
+        </p>
+        <button
+          onClick={() => { setAddOpen(true); setAddForm({ first_name: '', last_name: '', email: '', phone: '' }); setAddError(''); }}
+          className="flex items-center gap-1 text-xs font-semibold text-crmAccent hover:text-crmHover transition-colors"
+        >
+          <Plus size={13} /> Add Contact
+        </button>
+      </div>
+
+      {contacts.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-300 dark:border-slate-700 px-4 py-6 text-center">
+          <Users size={20} className="mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+          <p className="text-xs text-slate-400">No contacts linked to this account.</p>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {contacts.map(c => (
+            <div
+              key={c.id}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 group"
+            >
+              <div className="h-7 w-7 rounded-full bg-crmAccent/10 text-crmAccent flex items-center justify-center text-xs font-bold flex-shrink-0">
+                {c.first_name.charAt(0)}{c.last_name.charAt(0)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">
+                  {c.first_name} {c.last_name}
+                </p>
+                <div className="flex flex-wrap gap-x-3 mt-0.5">
+                  {c.email && (
+                    <span className="text-xs text-slate-400 flex items-center gap-1 truncate">
+                      <Mail size={10} /> {c.email}
+                    </span>
+                  )}
+                  {c.phone && (
+                    <span className="text-xs text-slate-400 flex items-center gap-1">
+                      <Phone size={10} /> {c.phone}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => handleUnlink(c)}
+                title="Unlink contact from account"
+                className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-all"
+              >
+                <Link size={13} className="rotate-45" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add contact form */}
+      {addOpen && (
+        <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-crmCard p-4 space-y-3 shadow-sm">
+          <p className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">New Contact</p>
+          {addError && (
+            <p className="text-xs text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded">{addError}</p>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">First Name *</label>
+              <input required type="text" value={addForm.first_name} onChange={e => setAddForm({...addForm, first_name: e.target.value})} className={inputCls + ' text-xs py-2'} placeholder="Jane" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Last Name *</label>
+              <input required type="text" value={addForm.last_name} onChange={e => setAddForm({...addForm, last_name: e.target.value})} className={inputCls + ' text-xs py-2'} placeholder="Doe" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Email</label>
+            <input type="email" value={addForm.email} onChange={e => setAddForm({...addForm, email: e.target.value})} className={inputCls + ' text-xs py-2'} placeholder="jane@company.com" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Phone</label>
+            <input type="tel" value={addForm.phone} onChange={e => setAddForm({...addForm, phone: e.target.value})} className={inputCls + ' text-xs py-2'} placeholder="+1 555 0100" />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={() => setAddOpen(false)} className="px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+              Cancel
+            </button>
+            <button onClick={handleAdd} disabled={!addForm.first_name || !addForm.last_name || addSaving} className="px-4 py-1.5 bg-crmAccent hover:bg-crmHover text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50">
+              {addSaving ? 'Adding…' : 'Add Contact'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Main component ───────────────────────────────────────
 const Accounts = () => {
   const [accounts, setAccounts]       = useState([]);
   const [loading, setLoading]         = useState(true);
@@ -209,15 +366,19 @@ const Accounts = () => {
 
             {/* Drawer body */}
             <div className="flex-1 overflow-y-auto p-5">
-              {drawerTab === 0 ? (
+              {drawerTab === 0 && (
                 <div className="space-y-0.5">
-                  <DetailRow icon={Tag}      label="Industry" value={selected.industry} />
-                  <DetailRow icon={Globe}    label="Website"  value={selected.website} />
-                  <DetailRow icon={Building2} label="Region"  value={selected.region} />
-                  <DetailRow icon={User}     label="Owner ID" value={selected.owner_id ? `#${selected.owner_id}` : null} />
-                  <DetailRow icon={Calendar} label="Created"  value={new Date(selected.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })} />
+                  <DetailRow icon={Tag}       label="Industry" value={selected.industry} />
+                  <DetailRow icon={Globe}     label="Website"  value={selected.website} />
+                  <DetailRow icon={Building2} label="Region"   value={selected.region} />
+                  <DetailRow icon={User}      label="Owner ID" value={selected.owner_id ? `#${selected.owner_id}` : null} />
+                  <DetailRow icon={Calendar}  label="Created"  value={new Date(selected.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })} />
                 </div>
-              ) : (
+              )}
+              {drawerTab === 1 && (
+                <AccountContactsTab account={selected} />
+              )}
+              {drawerTab === 2 && (
                 <TasksTab relatedAccountId={selected.id} />
               )}
             </div>
