@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, BarChart3, Calendar, DollarSign, Building2, MoreHorizontal, X } from 'lucide-react';
+import { Plus, BarChart3, Calendar, DollarSign, Building2, X, ChevronRight, Loader2 } from 'lucide-react';
 import { api } from '../context/AuthContext';
 import TasksTab from '../components/TasksTab';
 
@@ -18,11 +18,19 @@ const STAGE_COLORS = {
 
 const TABS = ['Details', 'Tasks'];
 
+const NEXT_STAGES = {
+  'Prospecting':   'Qualification',
+  'Qualification': 'Proposal',
+  'Proposal':      'Negotiation',
+  'Negotiation':   'Closed Won',
+};
+
 const fmt = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
 
 const Opportunities = () => {
   const [opportunities, setOpportunities] = useState([]);
   const [loading, setLoading]             = useState(true);
+  const [movingId, setMovingId]           = useState(null); // oppId being moved
 
   // Detail drawer
   const [selected, setSelected]   = useState(null);
@@ -70,6 +78,18 @@ const Opportunities = () => {
       fetchOpportunities();
     } catch (err) {
       console.error('Failed to create opportunity', err);
+    }
+  };
+
+  const handleMoveStage = async (opp, newStage) => {
+    setMovingId(opp.id);
+    try {
+      const res = await api.patch(`/opportunities/${opp.id}/stage`, { stage: newStage });
+      setOpportunities(prev => prev.map(o => o.id === opp.id ? { ...o, ...res.data } : o));
+    } catch (err) {
+      console.error('Failed to move stage', err);
+    } finally {
+      setMovingId(null);
     }
   };
 
@@ -134,7 +154,10 @@ const Opportunities = () => {
                         <p className="text-xs text-center text-slate-500 dark:text-slate-400 font-medium">Empty Stage</p>
                       </div>
                     ) : (
-                      stageOpps.map(opp => (
+                      stageOpps.map(opp => {
+                        const nextStage = NEXT_STAGES[opp.stage];
+                        const isMoving = movingId === opp.id;
+                        return (
                         <div
                           key={opp.id}
                           onClick={() => { setSelected(opp); setDrawerTab(0); }}
@@ -145,15 +168,9 @@ const Opportunities = () => {
                             }`}
                         >
                           <div className="flex justify-between items-start mb-2.5">
-                            <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100 leading-tight pr-4">
+                            <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100 leading-tight pr-2">
                               {opp.name}
                             </h4>
-                            <button
-                              onClick={e => { e.stopPropagation(); }}
-                              className="text-slate-400 hover:text-crmAccent opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 -mr-1"
-                            >
-                              <MoreHorizontal size={16} />
-                            </button>
                           </div>
 
                           <div className="space-y-3">
@@ -172,9 +189,24 @@ const Opportunities = () => {
                                 </div>
                               )}
                             </div>
+
+                            {/* Advance to next stage button */}
+                            {nextStage && (
+                              <button
+                                onClick={e => { e.stopPropagation(); handleMoveStage(opp, nextStage); }}
+                                disabled={isMoving}
+                                className="w-full mt-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-crmAccent hover:text-white hover:border-crmAccent dark:hover:bg-crmAccent dark:hover:border-crmAccent transition-all opacity-0 group-hover:opacity-100 disabled:opacity-50"
+                              >
+                                {isMoving
+                                  ? <Loader2 size={12} className="animate-spin" />
+                                  : <><span>Move to {nextStage}</span><ChevronRight size={12} /></>
+                                }
+                              </button>
+                            )}
                           </div>
                         </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -233,15 +265,30 @@ const Opportunities = () => {
             <div className="flex-1 overflow-y-auto p-5">
               {drawerTab === 0 ? (
                 <div className="space-y-0.5">
+                  {/* Stage mover */}
+                  <div className="py-2.5 border-b border-slate-100 dark:border-slate-800">
+                    <p className="text-xs text-slate-400 mb-1.5">Stage</p>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={selected.stage}
+                        onChange={e => handleMoveStage(selected, e.target.value)}
+                        disabled={movingId === selected.id}
+                        className="flex-1 px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-crmAccent cursor-pointer disabled:opacity-60"
+                      >
+                        {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      {movingId === selected.id && <Loader2 size={16} className="animate-spin text-crmAccent flex-shrink-0" />}
+                    </div>
+                  </div>
+
                   {[
-                    { label: 'Amount',         value: fmt(selected.amount || 0) },
-                    { label: 'Stage',           value: selected.stage },
-                    { label: 'Probability',     value: selected.probability != null ? `${selected.probability}%` : null },
-                    { label: 'Forecast',        value: selected.forecast_category },
-                    { label: 'Close Reason',    value: selected.close_reason },
-                    { label: 'Expected Close',  value: selected.expected_close_date ? new Date(selected.expected_close_date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : null },
-                    { label: 'Account ID',      value: selected.account_id ? `#${selected.account_id}` : null },
-                    { label: 'Created',         value: new Date(selected.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) },
+                    { label: 'Amount',        value: fmt(selected.amount || 0) },
+                    { label: 'Probability',   value: selected.probability != null ? `${selected.probability}%` : null },
+                    { label: 'Forecast',      value: selected.forecast_category },
+                    { label: 'Close Reason',  value: selected.close_reason },
+                    { label: 'Expected Close',value: selected.expected_close_date ? new Date(selected.expected_close_date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : null },
+                    { label: 'Account ID',    value: selected.account_id ? `#${selected.account_id}` : null },
+                    { label: 'Created',       value: new Date(selected.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) },
                   ].map(({ label, value }) => (
                     <div key={label} className="flex items-start gap-3 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
                       <div className="min-w-0">
