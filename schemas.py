@@ -7,6 +7,7 @@ from models import (
     LeadSource, LeadStatus,
     TaskPriority, TaskStatus, TaskType,
     UserRole,
+    RegulatoryStatus, DeviceClass,
 )
 
 # --- Token Schemas ---
@@ -173,7 +174,7 @@ class OpportunityBase(BaseModel):
     account_id: int | None = None
 
 class OpportunityCreate(OpportunityBase):
-    pass
+    product_ids: list[int] = []
 
 class OpportunityUpdate(BaseModel):
     name: str | None = None
@@ -184,6 +185,7 @@ class OpportunityUpdate(BaseModel):
     close_reason: str | None = None
     expected_close_date: datetime | None = None
     account_id: int | None = None
+    product_ids: list[int] | None = None
 
 class OpportunityStageUpdate(BaseModel):
     stage: OpportunityStage
@@ -195,6 +197,7 @@ class OpportunityResponse(OpportunityBase):
     stage_changed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    products: list["ProductSummary"] = []
 
     class Config:
         from_attributes = True
@@ -214,7 +217,7 @@ class LeadBase(BaseModel):
 
 
 class LeadCreate(LeadBase):
-    pass
+    product_ids: list[int] = []
 
 
 class LeadUpdate(BaseModel):
@@ -227,6 +230,7 @@ class LeadUpdate(BaseModel):
     lead_source: LeadSource | None = None
     status: LeadStatus | None = None
     notes: str | None = None
+    product_ids: list[int] | None = None
 
 
 class LeadRead(LeadBase):
@@ -240,6 +244,7 @@ class LeadRead(LeadBase):
     owner: UserResponse | None = None
     created_at: datetime
     updated_at: datetime
+    products: list["ProductSummary"] = []
 
     class Config:
         from_attributes = True
@@ -326,3 +331,177 @@ class ActivityResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ---------------------------------------------------------------------------
+# Product hierarchy schemas
+# ---------------------------------------------------------------------------
+# Defined bottom-up to avoid forward references:
+#   ProductCategorySlim → ProductFamilySlim → ProductRead
+#   → ProductFamilyRead → ProductCategoryRead
+# ---------------------------------------------------------------------------
+
+# --- Create / Update (no nesting needed) ---
+
+class ProductCategoryCreate(BaseModel):
+    name: str
+    description: str | None = None
+    is_active: bool = True
+
+
+class ProductCategoryUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    is_active: bool | None = None
+
+
+class ProductFamilyCreate(BaseModel):
+    name: str
+    category_id: int
+    description: str | None = None
+    therapeutic_area: str | None = None
+    is_active: bool = True
+
+
+class ProductFamilyUpdate(BaseModel):
+    name: str | None = None
+    category_id: int | None = None
+    description: str | None = None
+    therapeutic_area: str | None = None
+    is_active: bool | None = None
+
+
+class ProductCreate(BaseModel):
+    sku: str
+    name: str
+    family_id: int
+    description: str | None = None
+    unit_price: float = 0.0
+    currency: str = "USD"
+    unit_of_measure: str | None = None
+    regulatory_status: RegulatoryStatus = RegulatoryStatus.PENDING
+    device_class: DeviceClass | None = None
+    is_active: bool = True
+    launch_date: datetime | None = None
+    discontinue_date: datetime | None = None
+
+
+class ProductUpdate(BaseModel):
+    sku: str | None = None
+    name: str | None = None
+    family_id: int | None = None
+    description: str | None = None
+    unit_price: float | None = None
+    currency: str | None = None
+    unit_of_measure: str | None = None
+    regulatory_status: RegulatoryStatus | None = None
+    device_class: DeviceClass | None = None
+    is_active: bool | None = None
+    launch_date: datetime | None = None
+    discontinue_date: datetime | None = None
+
+
+# --- Slim / intermediate schemas (used for safe nesting) ---
+
+class ProductCategorySlim(BaseModel):
+    """ProductCategoryRead without families — embedded inside ProductFamilyRead."""
+    id: int
+    name: str
+    description: str | None = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ProductFamilySlim(BaseModel):
+    """ProductFamilyRead without products — embedded inside ProductRead."""
+    id: int
+    name: str
+    category_id: int
+    description: str | None = None
+    therapeutic_area: str | None = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    category: ProductCategorySlim | None = None
+
+    class Config:
+        from_attributes = True
+
+
+# --- Full Read schemas (bottom-up) ---
+
+class ProductRead(BaseModel):
+    id: int
+    sku: str
+    name: str
+    family_id: int
+    description: str | None = None
+    unit_price: float
+    currency: str
+    unit_of_measure: str | None = None
+    regulatory_status: RegulatoryStatus
+    device_class: DeviceClass | None = None
+    is_active: bool
+    launch_date: datetime | None = None
+    discontinue_date: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    family: ProductFamilySlim | None = None   # nested without products
+
+    class Config:
+        from_attributes = True
+
+
+class ProductFamilyRead(BaseModel):
+    id: int
+    name: str
+    category_id: int
+    description: str | None = None
+    therapeutic_area: str | None = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    category: ProductCategorySlim | None = None   # nested without families
+    products: list[ProductRead] = []
+
+    class Config:
+        from_attributes = True
+
+
+class ProductCategoryRead(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    families: list[ProductFamilyRead] = []
+
+    class Config:
+        from_attributes = True
+
+
+# --- Lightweight summary for dropdowns / Opportunity + Lead responses ---
+
+class ProductSummary(BaseModel):
+    """Flat projection used in Opportunity and Lead responses."""
+    id: int
+    sku: str
+    name: str
+    unit_price: float
+    currency: str
+    is_active: bool
+    family_name: str
+    category_name: str
+
+    class Config:
+        from_attributes = True
+
+
+# Resolve forward references used in OpportunityResponse and LeadRead
+OpportunityResponse.model_rebuild()
+LeadRead.model_rebuild()
