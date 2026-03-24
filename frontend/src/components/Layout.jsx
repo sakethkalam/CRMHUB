@@ -14,6 +14,7 @@ import {
   UserPlus,
   CheckSquare,
   ChevronDown,
+  Shield,
 } from 'lucide-react';
 import { AuthContext, api } from '../context/AuthContext';
 import ChatBot from './ChatBot';
@@ -148,6 +149,25 @@ const Layout = () => {
           )}
         </div>
       </div>
+
+      {/* Admin Portal link — only visible to Admin role */}
+      {user?.role === 'Admin' && (
+        <div className="px-4 pb-2 border-t border-slate-100 dark:border-slate-800 pt-3">
+          <NavLink
+            to="/admin/users"
+            onClick={() => setMobileMenuOpen(false)}
+            className={({ isActive }) =>
+              `flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ` +
+              (isActive
+                ? 'bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100')
+            }
+          >
+            <Shield className="w-[18px] h-[18px] mr-3 flex-shrink-0" />
+            Admin Portal
+          </NavLink>
+        </div>
+      )}
 
       {/* Bottom nav */}
       <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-1">

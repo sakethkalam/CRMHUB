@@ -11,29 +11,34 @@ import Tasks from './pages/Tasks';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
+import AdminLayout from './pages/admin/AdminLayout';
+import UserManagement from './pages/admin/UserManagement';
+import AuditLog from './pages/admin/AuditLog';
+import SystemSettings from './pages/admin/SystemSettings';
 
-// --- PrivateRoute Wrapper Component ---
-// This intelligently blocks access to any page that requires authentication.
+const Spinner = () => (
+  <div className="flex justify-center items-center h-screen w-full bg-slate-50 dark:bg-crmDark">
+    <div className="flex flex-col items-center">
+      <div className="w-12 h-12 border-4 border-crmAccent border-t-transparent rounded-full animate-spin" />
+      <p className="mt-4 text-slate-500 font-medium tracking-wide animate-pulse">Authenticating...</p>
+    </div>
+  </div>
+);
+
+// Blocks unauthenticated access to any protected page
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useContext(AuthContext);
+  if (loading) return <Spinner />;
+  if (!user) return <Navigate to="/login" replace />;
+  return children;
+};
 
-  // If the context is still pinging FastAPI to verify the session
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-screen w-full bg-slate-50 dark:bg-crmDark">
-        <div className="flex flex-col items-center">
-          <div className="w-12 h-12 border-4 border-crmAccent border-t-transparent rounded-full animate-spin"></div>
-          <p className="mt-4 text-slate-500 font-medium tracking-wide animate-pulse">Authenticating...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  // Everything is good, render the protected component
+// Blocks non-Admin users from the /admin subtree, redirects to dashboard
+const AdminRoute = ({ children }) => {
+  const { user, loading } = useContext(AuthContext);
+  if (loading) return <Spinner />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== 'Admin') return <Navigate to="/" replace />;
   return children;
 };
 
@@ -57,7 +62,15 @@ function App() {
             <Route path="profile" element={<Profile />} />
             <Route path="settings" element={<Settings />} />
           </Route>
-          
+
+          {/* Admin Portal — requires role = Admin */}
+          <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
+            <Route index element={<Navigate to="/admin/users" replace />} />
+            <Route path="users"     element={<UserManagement />} />
+            <Route path="audit-log" element={<AuditLog />} />
+            <Route path="settings"  element={<SystemSettings />} />
+          </Route>
+
           {/* Catch-all Fallback (404 mapping) */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

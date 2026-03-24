@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from config import settings
 from database import engine, Base
 from limiter import limiter
-from routers import users, accounts, contacts, opportunities, chat, leads, tasks, reports, activities
+from routers import users, accounts, contacts, opportunities, chat, leads, tasks, reports, activities, admin
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,26 @@ async def run_migrations():
                 completed_at TIMESTAMPTZ,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        # Admin tables
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ"))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id SERIAL PRIMARY KEY,
+                timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                user_email VARCHAR(255),
+                action VARCHAR(20) NOT NULL,
+                table_name VARCHAR(100) NOT NULL,
+                record_id INTEGER,
+                changes TEXT
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS system_settings (
+                key VARCHAR(100) PRIMARY KEY,
+                value TEXT
             )
         """))
         await conn.execute(text("""
@@ -127,6 +147,7 @@ app.include_router(leads.router)
 app.include_router(tasks.router)
 app.include_router(reports.router)
 app.include_router(activities.router)
+app.include_router(admin.router)
 
 
 @app.get("/")

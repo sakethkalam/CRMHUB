@@ -11,6 +11,7 @@ from jwt.exceptions import InvalidTokenError
 from database import get_db
 from models import User
 from schemas import UserCreate, UserResponse, UserUpdate, Token
+from datetime import datetime, timezone
 from auth import get_password_hash, verify_password, create_access_token, get_current_user
 from config import settings
 from limiter import limiter
@@ -88,6 +89,10 @@ async def login_for_access_token(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is inactive. Contact the administrator.",
         )
+
+    # Record last login timestamp
+    user.last_login = datetime.now(timezone.utc)
+    await db.commit()
 
     access_token = create_access_token(data={"sub": user.email})
 

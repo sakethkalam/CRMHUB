@@ -5,6 +5,32 @@ import enum
 
 from database import Base
 
+
+# ---------------------------------------------------------------------------
+# Audit log — records every admin/mutating action for compliance visibility
+# ---------------------------------------------------------------------------
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    timestamp  = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_email = Column(String(255), nullable=True)   # denormalised so history survives user deletion
+    action     = Column(String(20),  nullable=False)  # CREATE | UPDATE | DELETE
+    table_name = Column(String(100), nullable=False)
+    record_id  = Column(Integer,     nullable=True)
+    changes    = Column(Text,        nullable=True)   # JSON: {"old": {...}, "new": {...}}
+
+
+# ---------------------------------------------------------------------------
+# System settings — key / JSON-value pairs managed by Admins
+# ---------------------------------------------------------------------------
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key   = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=True)   # JSON-encoded scalar or object
+
 class UserRole(str, enum.Enum):
     ADMIN     = "Admin"
     MANAGER   = "Manager"
@@ -92,6 +118,7 @@ class User(Base):
     role = Column(Enum(UserRole, values_callable=lambda obj: [e.value for e in obj]), default=UserRole.SALES_REP, nullable=False)
     region = Column(String(100), nullable=True)   # e.g. "North", "West" — used for Manager scoping
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_login = Column(DateTime(timezone=True), nullable=True)   # recorded on each successful login
     
     # Relationships
     accounts = relationship("Account", back_populates="owner")

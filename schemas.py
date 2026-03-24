@@ -62,9 +62,59 @@ class UserResponse(UserBase):
     role: UserRole
     region: str | None = None
     created_at: datetime
+    last_login: datetime | None = None
 
     class Config:
         from_attributes = True
+
+
+# --- Admin schemas ---
+
+class AdminUserResponse(UserResponse):
+    """Extended user info only returned by admin endpoints."""
+    pass  # same fields; kept as a distinct type for OpenAPI clarity
+
+
+class AdminRoleUpdate(BaseModel):
+    role: UserRole
+
+
+class AdminInviteUser(BaseModel):
+    email: EmailStr
+    full_name: str | None = None
+    role: UserRole = UserRole.SALES_REP
+
+
+class AdminBulkAction(BaseModel):
+    user_ids: list[int]
+
+
+class AuditLogRead(BaseModel):
+    id: int
+    timestamp: datetime
+    user_id: int | None = None
+    user_email: str | None = None
+    action: str
+    table_name: str
+    record_id: int | None = None
+    changes: str | None = None   # raw JSON string
+
+    class Config:
+        from_attributes = True
+
+
+class SystemSettingsResponse(BaseModel):
+    AUTO_GENERATE_AGREEMENT_ON_CLOSE: bool = False
+    DEFAULT_AGREEMENT_TYPE: str = "Standard"
+    EMAIL_NOTIFICATIONS_ENABLED: bool = True
+    MAX_LOGIN_ATTEMPTS: int = 5
+
+
+class SystemSettingUpdate(BaseModel):
+    AUTO_GENERATE_AGREEMENT_ON_CLOSE: bool | None = None
+    DEFAULT_AGREEMENT_TYPE: str | None = None
+    EMAIL_NOTIFICATIONS_ENABLED: bool | None = None
+    MAX_LOGIN_ATTEMPTS: int | None = None
 
 # --- Account Schemas ---
 class AccountBase(BaseModel):
