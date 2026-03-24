@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Float, Enum, Text, event
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Float, Enum, Text, Table, event
 from sqlalchemy.orm import relationship, validates
 import enum
 
@@ -130,6 +130,39 @@ class OpportunityStage(str, enum.Enum):
     CLOSED_WON = "Closed Won"
     CLOSED_LOST = "Closed Lost"
 
+
+class RegulatoryStatus(str, enum.Enum):
+    APPROVED        = "Approved"
+    PENDING         = "Pending"
+    DISCONTINUED    = "Discontinued"
+    INVESTIGATIONAL = "Investigational"
+
+
+class DeviceClass(str, enum.Enum):
+    CLASS_I   = "Class I"
+    CLASS_II  = "Class II"
+    CLASS_III = "Class III"
+
+
+# ---------------------------------------------------------------------------
+# Product hierarchy — association tables (defined before ORM classes)
+# ---------------------------------------------------------------------------
+
+opportunity_products = Table(
+    "opportunity_products",
+    Base.metadata,
+    Column("opportunity_id", Integer, ForeignKey("opportunities.id", ondelete="CASCADE"), primary_key=True),
+    Column("product_id",     Integer, ForeignKey("products.id",      ondelete="CASCADE"), primary_key=True),
+)
+
+lead_products = Table(
+    "lead_products",
+    Base.metadata,
+    Column("lead_id",    Integer, ForeignKey("leads.id",    ondelete="CASCADE"), primary_key=True),
+    Column("product_id", Integer, ForeignKey("products.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class User(Base):
     __tablename__ = "users"
     
@@ -217,6 +250,7 @@ class Opportunity(Base):
     # Relationships
     account    = relationship("Account", back_populates="opportunities")
     activities = relationship("Activity", back_populates="opportunity")
+    products   = relationship("Product", secondary=opportunity_products, backref="opportunities")
 
     # ----------------------------------------------------------------
     # Computed property — not stored in DB
@@ -268,9 +302,10 @@ class Lead(Base):
 
     # Relationships
     owner = relationship("User", back_populates="leads")
-    converted_account = relationship("Account", foreign_keys=[converted_account_id])
-    converted_contact = relationship("Contact", foreign_keys=[converted_contact_id])
+    converted_account     = relationship("Account",     foreign_keys=[converted_account_id])
+    converted_contact     = relationship("Contact",     foreign_keys=[converted_contact_id])
     converted_opportunity = relationship("Opportunity", foreign_keys=[converted_opportunity_id])
+    products              = relationship("Product", secondary=lead_products, backref="leads")
 
 
 class Task(Base):
@@ -330,3 +365,68 @@ class Activity(Base):
     account = relationship("Account", back_populates="activities")
     contact = relationship("Contact", back_populates="activities")
     opportunity = relationship("Opportunity", back_populates="activities")
+
+
+# ---------------------------------------------------------------------------
+# Product hierarchy — 3-level: Category → Family → Product
+# ---------------------------------------------------------------------------
+
+class ProductCategory(Base):
+    """Top-level grouping (e.g. Imaging, Surgical, Monitoring)."""
+    __tablename__ = "product_categories"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    name        = Column(String(255), unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    is_active   = Column(Boolean, default=True, nullable=False)
+    created_at  = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at  = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    families = relationship("ProductFamily", back_populates="category", cascade="all, delete-orphan")
+
+
+class ProductFamily(Base):
+    """Mid-level grouping within a category (e.g. MRI Systems, Orthopedic Implants)."""
+    __tablename__ = "product_families"
+
+    id                = Column(Integer, primary_key=True, index=True)
+    name              = Column(String(255), nullable=False, index=True)
+    category_id       = Column(Integer, ForeignKey("product_categories.id", ondelete="CASCADE"), nullable=False)
+    description       = Column(Text, nullable=True)
+    therapeutic_area  = Column(String(255), nullable=True)
+    is_active         = Column(Boolean, default=True, nullable=False)
+    created_at        = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at        = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    category = relationship("ProductCategory", back_populates="families")
+    products = relationship("Product", back_populates="family", cascade="all, delete-orphan")
+
+
+class Product(Base):
+    """Individual SKU — leaf node of the product hierarchy."""
+    __tablename__ = "products"
+
+    id                  = Column(Integer, primary_key=True, index=True)
+    sku                 = Column(String(100), unique=True, nullable=False, index=True)
+    name                = Column(String(255), nullable=False, index=True)
+    family_id           = Column(Integer, ForeignKey("product_families.id", ondelete="CASCADE"), nullable=False)
+    description         = Column(Text, nullable=True)
+    unit_price          = Column(Float, default=0.0, nullable=False)
+    currency            = Column(String(10), default="USD", nullable=False)
+    unit_of_measure     = Column(String(50), nullable=True)   # e.g. "each", "box of 10"
+    regulatory_status   = Column(
+        Enum(RegulatoryStatus, values_callable=lambda obj: [e.value for e in obj], native_enum=False),
+        default=RegulatoryStatus.PENDING,
+        nullable=False,
+    )
+    device_class        = Column(
+        Enum(DeviceClass, values_callable=lambda obj: [e.value for e in obj], native_enum=False),
+        nullable=True,
+    )
+    is_active           = Column(Boolean, default=True, nullable=False)
+    launch_date         = Column(DateTime(timezone=True), nullable=True)
+    discontinue_date    = Column(DateTime(timezone=True), nullable=True)
+    created_at          = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at          = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    family = relationship("ProductFamily", back_populates="products")

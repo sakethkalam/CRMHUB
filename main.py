@@ -118,6 +118,62 @@ async def run_migrations():
         await conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_notifications_created_at ON notifications(created_at)"
         ))
+        # Product hierarchy
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS product_categories (
+                id          SERIAL PRIMARY KEY,
+                name        VARCHAR(255) NOT NULL UNIQUE,
+                description TEXT,
+                is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at  TIMESTAMPTZ DEFAULT NOW(),
+                updated_at  TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS product_families (
+                id               SERIAL PRIMARY KEY,
+                name             VARCHAR(255) NOT NULL,
+                category_id      INTEGER NOT NULL REFERENCES product_categories(id) ON DELETE CASCADE,
+                description      TEXT,
+                therapeutic_area VARCHAR(255),
+                is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at       TIMESTAMPTZ DEFAULT NOW(),
+                updated_at       TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS products (
+                id                SERIAL PRIMARY KEY,
+                sku               VARCHAR(100) NOT NULL UNIQUE,
+                name              VARCHAR(255) NOT NULL,
+                family_id         INTEGER NOT NULL REFERENCES product_families(id) ON DELETE CASCADE,
+                description       TEXT,
+                unit_price        FLOAT NOT NULL DEFAULT 0.0,
+                currency          VARCHAR(10) NOT NULL DEFAULT 'USD',
+                unit_of_measure   VARCHAR(50),
+                regulatory_status VARCHAR(50) NOT NULL DEFAULT 'Pending',
+                device_class      VARCHAR(50),
+                is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+                launch_date       TIMESTAMPTZ,
+                discontinue_date  TIMESTAMPTZ,
+                created_at        TIMESTAMPTZ DEFAULT NOW(),
+                updated_at        TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS opportunity_products (
+                opportunity_id INTEGER NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+                product_id     INTEGER NOT NULL REFERENCES products(id)      ON DELETE CASCADE,
+                PRIMARY KEY (opportunity_id, product_id)
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS lead_products (
+                lead_id    INTEGER NOT NULL REFERENCES leads(id)    ON DELETE CASCADE,
+                product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                PRIMARY KEY (lead_id, product_id)
+            )
+        """))
     logger.info("Startup migrations complete.")
 
 
