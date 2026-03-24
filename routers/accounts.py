@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import insert as sa_insert, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import or_
 
 from auth import get_current_user
 from database import get_db
@@ -9,6 +9,7 @@ from models import Account, User, UserRole
 from permissions import ROLE_RANK, require_role
 from schemas import AccountCreate, AccountUpdate, AccountResponse
 from services.audit_service import log_change, snapshot
+from services.csv_import import ImportResult, RowError, parse_csv_bytes
 from typing import List
 
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
@@ -53,6 +54,68 @@ async def _get_account(account_id: int, current_user: User, db: AsyncSession) ->
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     return account
+
+
+# ---------------------------------------------------------------------------
+# IMPORT  (before /{account_id} to avoid path-param ambiguity)
+# ---------------------------------------------------------------------------
+
+@router.post("/import", response_model=ImportResult, status_code=status.HTTP_200_OK)
+async def import_accounts(
+    file: UploadFile = File(..., description="CSV file with account data"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.SALES_REP)),
+):
+    """
+    Bulk-import accounts from a CSV file.
+
+    Required columns : name
+    Optional columns : industry, website, region
+
+    All imported accounts are owned by the authenticated user.
+    Duplicate account names (case-insensitive, within the file) are skipped.
+    """
+    content = await file.read()
+    try:
+        parsed = parse_csv_bytes(content, required_columns={"name"})
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    errors:     list[RowError] = list(parsed.errors)
+    valid_rows: list[dict]     = []
+    skipped = 0
+
+    seen_names: dict[str, int] = {}  # lowercased name → first row number
+
+    for i, row in enumerate(parsed.rows, start=1):
+        name = row.get("name", "")
+
+        if not name:
+            errors.append(RowError(row=i, reason="name is required"))
+            skipped += 1
+            continue
+
+        name_key = name.lower()
+        if name_key in seen_names:
+            errors.append(RowError(row=i, reason=f"Duplicate account name in file (first seen at row {seen_names[name_key]})"))
+            skipped += 1
+            continue
+        seen_names[name_key] = i
+
+        valid_rows.append({
+            "name":     name,
+            "industry": row.get("industry") or None,
+            "website":  row.get("website")  or None,
+            "region":   row.get("region")   or None,
+            "owner_id": current_user.id,
+        })
+
+    # ── Bulk insert (accounts have no unique constraint, so no DB dedup needed) ──
+    if valid_rows:
+        await db.execute(sa_insert(Account), valid_rows)
+        await db.commit()
+
+    return ImportResult(imported=len(valid_rows), skipped=skipped, errors=errors)
 
 
 # ---------------------------------------------------------------------------

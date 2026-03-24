@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import insert as sa_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -9,6 +10,7 @@ from auth import get_current_user
 from database import get_db
 from models import Account, Contact, Lead, LeadSource, LeadStatus, NotificationType, Opportunity, OpportunityStage, User, UserRole
 from services.audit_service import log_change, snapshot
+from services.csv_import import ImportResult, RowError, parse_csv_bytes, validate_email
 from services.notification_service import create_notification
 from permissions import ROLE_RANK, require_role
 from schemas import (
@@ -52,6 +54,106 @@ async def _get_lead(lead_id: int, current_user: User, db: AsyncSession) -> Lead:
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     return lead
+
+
+# ---------------------------------------------------------------------------
+# IMPORT  (must be before /{lead_id} routes so "import" isn't treated as an id)
+# ---------------------------------------------------------------------------
+
+_VALID_LEAD_SOURCES: dict[str, str] = {s.value.lower(): s.value for s in LeadSource}
+
+
+@router.post("/import", response_model=ImportResult, status_code=status.HTTP_200_OK)
+async def import_leads(
+    file: UploadFile = File(..., description="CSV file with lead data"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.SALES_REP)),
+):
+    """
+    Bulk-import leads from a CSV file.
+
+    Required columns : first_name, last_name
+    Optional columns : email, phone, company_name, job_title, lead_source
+
+    Rows with a missing first_name or an invalid email are skipped and reported.
+    Duplicate emails (within the file or against existing leads) are also skipped.
+    """
+    content = await file.read()
+    try:
+        parsed = parse_csv_bytes(content, required_columns={"first_name", "last_name"})
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    errors:     list[RowError] = list(parsed.errors)  # seed with any row-limit errors
+    valid_rows: list[dict]     = []
+    skipped = 0
+
+    # ── Per-row validation ──────────────────────────────────────────────────
+    seen_emails: dict[str, int] = {}  # email → first row number (dedup within file)
+
+    for i, row in enumerate(parsed.rows, start=1):
+        first_name = row.get("first_name", "")
+        last_name  = row.get("last_name",  "")
+        email      = row.get("email",      "") or None
+
+        if not first_name:
+            errors.append(RowError(row=i, reason="first_name is required"))
+            skipped += 1
+            continue
+
+        if email:
+            if not validate_email(email):
+                errors.append(RowError(row=i, reason=f"Invalid email format: {email!r}"))
+                skipped += 1
+                continue
+            if email in seen_emails:
+                errors.append(RowError(row=i, reason=f"Duplicate email in file (first seen at row {seen_emails[email]})"))
+                skipped += 1
+                continue
+            seen_emails[email] = i
+
+        lead_source_raw = row.get("lead_source", "")
+        lead_source = _VALID_LEAD_SOURCES.get(lead_source_raw.lower(), LeadSource.OTHER.value)
+
+        valid_rows.append({
+            "first_name":   first_name,
+            "last_name":    last_name,
+            "email":        email,
+            "phone":        row.get("phone")        or None,
+            "company_name": row.get("company_name") or None,
+            "job_title":    row.get("job_title")    or None,
+            "lead_source":  lead_source,
+            "status":       LeadStatus.NEW.value,
+            "is_converted": False,
+            "owner_id":     current_user.id,
+        })
+
+    # ── Duplicate-email check against DB ────────────────────────────────────
+    if seen_emails:
+        existing = set(
+            (await db.execute(
+                select(Lead.email).where(Lead.email.in_(list(seen_emails.keys())))
+            )).scalars().all()
+        )
+        if existing:
+            kept = []
+            for r in valid_rows:
+                if r["email"] in existing:
+                    errors.append(RowError(
+                        row=seen_emails[r["email"]],
+                        reason=f"Email already exists in database: {r['email']}",
+                    ))
+                    skipped += 1
+                else:
+                    kept.append(r)
+            valid_rows = kept
+
+    # ── Bulk insert ─────────────────────────────────────────────────────────
+    if valid_rows:
+        await db.execute(sa_insert(Lead), valid_rows)
+        await db.commit()
+
+    return ImportResult(imported=len(valid_rows), skipped=skipped, errors=errors)
 
 
 # ---------------------------------------------------------------------------

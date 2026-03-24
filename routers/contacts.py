@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import insert as sa_insert, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import or_
 
 from auth import get_current_user
 from database import get_db
@@ -9,6 +9,7 @@ from models import Account, Activity, Contact, User, UserRole
 from permissions import ROLE_RANK, require_role
 from schemas import ActivityResponse, ContactCreate, ContactUpdate, ContactResponse
 from services.audit_service import log_change, snapshot
+from services.csv_import import ImportResult, RowError, parse_csv_bytes, validate_email
 from typing import List
 
 router = APIRouter(prefix="/contacts", tags=["Contacts"])
@@ -57,6 +58,115 @@ async def _get_contact_or_403(contact_id: int, current_user: User, db: AsyncSess
     if contact.account_id:
         await _verify_account_access(contact.account_id, current_user, db)
     return contact
+
+
+# ---------------------------------------------------------------------------
+# IMPORT  (before /{contact_id} to avoid path-param ambiguity)
+# ---------------------------------------------------------------------------
+
+@router.post("/import", response_model=ImportResult, status_code=status.HTTP_200_OK)
+async def import_contacts(
+    file: UploadFile = File(..., description="CSV file with contact data"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.SALES_REP)),
+):
+    """
+    Bulk-import contacts from a CSV file.
+
+    Required columns : first_name, last_name
+    Optional columns : email, phone, account_id
+
+    ``account_id`` must be an integer that belongs to an account the current
+    user can access.  Rows with an unrecognised account_id are imported with
+    no account linkage (not skipped).
+    Duplicate emails (within the file or against existing contacts) are skipped.
+    """
+    content = await file.read()
+    try:
+        parsed = parse_csv_bytes(content, required_columns={"first_name", "last_name"})
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    errors:     list[RowError] = list(parsed.errors)
+    valid_rows: list[dict]     = []
+    skipped = 0
+
+    # Pre-load accessible account IDs so we can validate account_id values
+    acct_id_subq = _accessible_account_ids(current_user)
+    accessible_acct_ids: set[int] = set(
+        (await db.execute(acct_id_subq)).scalars().all()
+    )
+
+    seen_emails: dict[str, int] = {}
+
+    for i, row in enumerate(parsed.rows, start=1):
+        first_name = row.get("first_name", "")
+        last_name  = row.get("last_name",  "")
+        email      = row.get("email",      "") or None
+
+        if not first_name:
+            errors.append(RowError(row=i, reason="first_name is required"))
+            skipped += 1
+            continue
+
+        if email:
+            if not validate_email(email):
+                errors.append(RowError(row=i, reason=f"Invalid email format: {email!r}"))
+                skipped += 1
+                continue
+            if email in seen_emails:
+                errors.append(RowError(row=i, reason=f"Duplicate email in file (first seen at row {seen_emails[email]})"))
+                skipped += 1
+                continue
+            seen_emails[email] = i
+
+        # Resolve account_id — ignore invalid or inaccessible values
+        account_id: int | None = None
+        raw_acct = row.get("account_id", "").strip()
+        if raw_acct:
+            try:
+                aid = int(raw_acct)
+                if aid in accessible_acct_ids:
+                    account_id = aid
+                else:
+                    errors.append(RowError(row=i, reason=f"account_id {aid} not found or not accessible — contact imported without account link"))
+            except ValueError:
+                errors.append(RowError(row=i, reason=f"account_id {raw_acct!r} is not a valid integer — contact imported without account link"))
+
+        valid_rows.append({
+            "first_name": first_name,
+            "last_name":  last_name,
+            "email":      email,
+            "phone":      row.get("phone") or None,
+            "account_id": account_id,
+        })
+
+    # ── Duplicate-email check against DB ────────────────────────────────────
+    if seen_emails:
+        existing = set(
+            (await db.execute(
+                select(Contact.email).where(Contact.email.in_(list(seen_emails.keys())))
+            )).scalars().all()
+        )
+        if existing:
+            kept = []
+            for r in valid_rows:
+                if r["email"] in existing:
+                    errors.append(RowError(
+                        row=seen_emails[r["email"]],
+                        reason=f"Email already exists in database: {r['email']}",
+                    ))
+                    skipped += 1
+                else:
+                    kept.append(r)
+            valid_rows = kept
+
+    # ── Bulk insert ─────────────────────────────────────────────────────────
+    if valid_rows:
+        await db.execute(sa_insert(Contact), valid_rows)
+        await db.commit()
+
+    return ImportResult(imported=len(valid_rows), skipped=skipped, errors=errors)
 
 
 # ---------------------------------------------------------------------------
