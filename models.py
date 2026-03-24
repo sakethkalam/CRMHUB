@@ -162,6 +162,20 @@ lead_products = Table(
     Column("product_id", Integer, ForeignKey("products.id", ondelete="CASCADE"), primary_key=True),
 )
 
+opportunity_accounts = Table(
+    "opportunity_accounts",
+    Base.metadata,
+    Column("opportunity_id", Integer, ForeignKey("opportunities.id", ondelete="CASCADE"), primary_key=True),
+    Column("account_id",     Integer, ForeignKey("accounts.id",      ondelete="CASCADE"), primary_key=True),
+)
+
+lead_accounts = Table(
+    "lead_accounts",
+    Base.metadata,
+    Column("lead_id",    Integer, ForeignKey("leads.id",    ondelete="CASCADE"), primary_key=True),
+    Column("account_id", Integer, ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class User(Base):
     __tablename__ = "users"
@@ -248,9 +262,10 @@ class Opportunity(Base):
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    account    = relationship("Account", back_populates="opportunities")
+    account    = relationship("Account", back_populates="opportunities", foreign_keys=[account_id])
     activities = relationship("Activity", back_populates="opportunity")
     products   = relationship("Product", secondary=opportunity_products, backref="opportunities")
+    accounts   = relationship("Account", secondary=opportunity_accounts, lazy="noload")
 
     # ----------------------------------------------------------------
     # Computed property — not stored in DB
@@ -306,6 +321,7 @@ class Lead(Base):
     converted_contact     = relationship("Contact",     foreign_keys=[converted_contact_id])
     converted_opportunity = relationship("Opportunity", foreign_keys=[converted_opportunity_id])
     products              = relationship("Product", secondary=lead_products, backref="leads")
+    accounts              = relationship("Account", secondary=lead_accounts, lazy="noload")
 
 
 class Task(Base):

@@ -174,6 +174,20 @@ async def run_migrations():
                 PRIMARY KEY (lead_id, product_id)
             )
         """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS opportunity_accounts (
+                opportunity_id INTEGER NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+                account_id     INTEGER NOT NULL REFERENCES accounts(id)      ON DELETE CASCADE,
+                PRIMARY KEY (opportunity_id, account_id)
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS lead_accounts (
+                lead_id    INTEGER NOT NULL REFERENCES leads(id)    ON DELETE CASCADE,
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                PRIMARY KEY (lead_id, account_id)
+            )
+        """))
     logger.info("Startup migrations complete.")
 
 

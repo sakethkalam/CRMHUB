@@ -175,6 +175,7 @@ class OpportunityBase(BaseModel):
 
 class OpportunityCreate(OpportunityBase):
     product_ids: list[int] = []
+    account_ids: list[int] = []
 
 class OpportunityUpdate(BaseModel):
     name: str | None = None
@@ -186,6 +187,7 @@ class OpportunityUpdate(BaseModel):
     expected_close_date: datetime | None = None
     account_id: int | None = None
     product_ids: list[int] | None = None
+    account_ids: list[int] | None = None
 
 class OpportunityStageUpdate(BaseModel):
     stage: OpportunityStage
@@ -198,6 +200,7 @@ class OpportunityResponse(OpportunityBase):
     created_at: datetime
     updated_at: datetime
     products: list["ProductSummary"] = []
+    accounts: list["AccountResponse"] = []
 
     class Config:
         from_attributes = True
@@ -218,6 +221,7 @@ class LeadBase(BaseModel):
 
 class LeadCreate(LeadBase):
     product_ids: list[int] = []
+    account_ids: list[int] = []
 
 
 class LeadUpdate(BaseModel):
@@ -231,6 +235,7 @@ class LeadUpdate(BaseModel):
     status: LeadStatus | None = None
     notes: str | None = None
     product_ids: list[int] | None = None
+    account_ids: list[int] | None = None
 
 
 class LeadRead(LeadBase):
@@ -245,6 +250,7 @@ class LeadRead(LeadBase):
     created_at: datetime
     updated_at: datetime
     products: list["ProductSummary"] = []
+    accounts: list["AccountResponse"] = []
 
     class Config:
         from_attributes = True
@@ -505,3 +511,4 @@ class ProductSummary(BaseModel):
 # Resolve forward references used in OpportunityResponse and LeadRead
 OpportunityResponse.model_rebuild()
 LeadRead.model_rebuild()
+AccountResponse.model_rebuild()

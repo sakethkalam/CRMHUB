@@ -13,7 +13,7 @@ from database import get_db
 from models import (
     Account, ForecastCategory, Notification, NotificationType,
     Opportunity, OpportunityStage, Product, ProductFamily,
-    User, UserRole,
+    User, UserRole, opportunity_accounts,
 )
 from services.audit_service import log_change, snapshot
 from services.notification_service import create_notification
@@ -93,10 +93,17 @@ def _product_opts():
     )
 
 
+def _account_opts():
+    """selectinload for Opportunity.accounts (M2M)."""
+    return selectinload(Opportunity.accounts)
+
+
 async def _fetch_opp_loaded(opp_id: int, db: AsyncSession) -> Opportunity:
-    """Re-fetch an opportunity with products eagerly loaded (used after mutations)."""
+    """Re-fetch an opportunity with products and accounts eagerly loaded (used after mutations)."""
     result = await db.execute(
-        select(Opportunity).where(Opportunity.id == opp_id).options(_product_opts())
+        select(Opportunity)
+        .where(Opportunity.id == opp_id)
+        .options(_product_opts(), _account_opts())
     )
     return result.scalar_one()
 
@@ -107,6 +114,16 @@ async def _resolve_products(product_ids: list[int], db: AsyncSession) -> list[Pr
         return []
     result = await db.execute(
         select(Product).where(Product.id.in_(product_ids), Product.is_active == True)
+    )
+    return result.scalars().all()
+
+
+async def _resolve_accounts(account_ids: list[int], db: AsyncSession) -> list[Account]:
+    """Fetch Account rows for the given IDs."""
+    if not account_ids:
+        return []
+    result = await db.execute(
+        select(Account).where(Account.id.in_(account_ids))
     )
     return result.scalars().all()
 
@@ -299,14 +316,20 @@ async def create_opportunity(
 ):
     """
     Create an opportunity.
-    If account_id is provided, the current user must have access to that account.
+    If account_ids is provided, the first entry becomes the primary account_id.
+    If account_id is provided without account_ids, it is used as-is.
     If product_ids is provided, those active products are linked in the same transaction.
     """
-    if opp_in.account_id:
-        await _verify_account_access(opp_in.account_id, current_user, db)
-
     data = opp_in.model_dump()
-    product_ids: list[int] = data.pop("product_ids")  # always present (default=[])
+    product_ids: list[int] = data.pop("product_ids")   # always present (default=[])
+    account_ids: list[int] = data.pop("account_ids")   # always present (default=[])
+
+    # account_ids[0] overrides any explicit account_id
+    if account_ids:
+        data["account_id"] = account_ids[0]
+
+    if data.get("account_id"):
+        await _verify_account_access(data["account_id"], current_user, db)
 
     new_opp = Opportunity(**data)
     db.add(new_opp)
@@ -314,6 +337,8 @@ async def create_opportunity(
 
     if product_ids:
         new_opp.products = await _resolve_products(product_ids, db)
+    if account_ids:
+        new_opp.accounts = await _resolve_accounts(account_ids, db)
 
     await log_change(db, table_name="opportunities", record_id=new_opp.id,
                      action="CREATE", new_values=snapshot(new_opp),
@@ -340,7 +365,7 @@ async def list_opportunities(
     query = (
         select(Opportunity)
         .where(Opportunity.account_id.in_(acct_ids))
-        .options(_product_opts())
+        .options(_product_opts(), _account_opts())
     )
 
     if account_id:
@@ -358,7 +383,7 @@ async def get_opportunity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await _get_opportunity_or_403(opp_id, current_user, db, options=[_product_opts()])
+    return await _get_opportunity_or_403(opp_id, current_user, db, options=[_product_opts(), _account_opts()])
 
 
 @router.put("/{opp_id}", response_model=OpportunityResponse)
@@ -370,18 +395,27 @@ async def update_opportunity(
 ):
     opp = await _get_opportunity_or_403(opp_id, current_user, db)
 
-    if opp_in.account_id and opp_in.account_id != opp.account_id:
-        await _verify_account_access(opp_in.account_id, current_user, db)
-
     old = snapshot(opp)
     data = opp_in.model_dump(exclude_unset=True)
-    product_ids = data.pop("product_ids", None)  # None = not sent → leave products unchanged
+    product_ids = data.pop("product_ids", None)   # None = not sent → leave unchanged
+    account_ids = data.pop("account_ids", None)   # None = not sent → leave unchanged
+
+    # account_ids[0] overrides account_id when the list is provided and non-empty
+    if account_ids is not None and account_ids:
+        data["account_id"] = account_ids[0]
+
+    if data.get("account_id") and data["account_id"] != opp.account_id:
+        await _verify_account_access(data["account_id"], current_user, db)
 
     for key, value in data.items():
         setattr(opp, key, value)
 
     if product_ids is not None:  # even [] means "clear all products"
         opp.products = await _resolve_products(product_ids, db)
+    if account_ids is not None:  # even [] means "clear all linked accounts"
+        opp.accounts = await _resolve_accounts(account_ids, db)
+        if account_ids:
+            opp.account_id = account_ids[0]
 
     await log_change(db, table_name="opportunities", record_id=opp_id,
                      action="UPDATE", old_values=old, new_values=snapshot(opp),
@@ -400,19 +434,33 @@ async def patch_opportunity(
 ):
     """Partial update — only the fields you send are changed (uses exclude_unset).
     Pass ``product_ids`` (even as ``[]``) to replace the entire products list.
-    Omit ``product_ids`` entirely to leave existing products untouched.
+    Pass ``account_ids`` (even as ``[]``) to replace the entire linked-accounts list;
+    if non-empty, ``account_ids[0]`` also becomes the primary ``account_id``.
+    Omit either field entirely to leave it untouched.
     """
     opp = await _get_opportunity_or_403(opp_id, current_user, db)
     old = snapshot(opp)
 
     data = opp_in.model_dump(exclude_unset=True)
-    product_ids = data.pop("product_ids", None)  # None = not sent → leave products unchanged
+    product_ids = data.pop("product_ids", None)   # None = not sent → leave unchanged
+    account_ids = data.pop("account_ids", None)   # None = not sent → leave unchanged
+
+    # account_ids[0] overrides account_id when the list is provided and non-empty
+    if account_ids is not None and account_ids:
+        data["account_id"] = account_ids[0]
+
+    if data.get("account_id") and data["account_id"] != opp.account_id:
+        await _verify_account_access(data["account_id"], current_user, db)
 
     for key, value in data.items():
         setattr(opp, key, value)
 
     if product_ids is not None:  # even [] means "clear all products"
         opp.products = await _resolve_products(product_ids, db)
+    if account_ids is not None:  # even [] means "clear all linked accounts"
+        opp.accounts = await _resolve_accounts(account_ids, db)
+        if account_ids:
+            opp.account_id = account_ids[0]
 
     await log_change(db, table_name="opportunities", record_id=opp_id,
                      action="UPDATE", old_values=old, new_values=snapshot(opp),

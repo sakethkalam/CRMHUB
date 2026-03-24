@@ -13,7 +13,7 @@ from models import (
     Account, Contact, Lead, LeadSource, LeadStatus,
     NotificationType, Opportunity, OpportunityStage,
     Product, ProductFamily,
-    User, UserRole,
+    User, UserRole, lead_accounts,
 )
 from services.audit_service import log_change, snapshot
 from services.csv_import import ImportResult, RowError, parse_csv_bytes, validate_email
@@ -87,10 +87,17 @@ def _product_opts():
     )
 
 
+def _account_opts():
+    """selectinload for Lead.accounts (M2M)."""
+    return selectinload(Lead.accounts)
+
+
 async def _fetch_lead_loaded(lead_id: int, db: AsyncSession) -> Lead:
-    """Re-fetch a lead with products eagerly loaded (used after mutations)."""
+    """Re-fetch a lead with products and accounts eagerly loaded (used after mutations)."""
     result = await db.execute(
-        select(Lead).where(Lead.id == lead_id).options(_product_opts())
+        select(Lead)
+        .where(Lead.id == lead_id)
+        .options(_product_opts(), _account_opts())
     )
     return result.scalar_one()
 
@@ -101,6 +108,16 @@ async def _resolve_products(product_ids: list[int], db: AsyncSession) -> list[Pr
         return []
     result = await db.execute(
         select(Product).where(Product.id.in_(product_ids), Product.is_active == True)
+    )
+    return result.scalars().all()
+
+
+async def _resolve_accounts(account_ids: list[int], db: AsyncSession) -> list[Account]:
+    """Fetch Account rows for the given IDs."""
+    if not account_ids:
+        return []
+    result = await db.execute(
+        select(Account).where(Account.id.in_(account_ids))
     )
     return result.scalars().all()
 
@@ -224,7 +241,7 @@ async def list_leads(
     Admin / Manager → all leads (optionally filtered by owner_id);
     Sales Rep → own leads only.
     """
-    query = _apply_lead_scope(select(Lead), current_user).options(_product_opts())
+    query = _apply_lead_scope(select(Lead), current_user).options(_product_opts(), _account_opts())
 
     if status is not None:
         query = query.where(Lead.status == status)
@@ -251,9 +268,11 @@ async def create_lead(
 ):
     """Create a new lead owned by the logged-in user.
     If product_ids is provided, those active products are linked in the same transaction.
+    If account_ids is provided, those accounts are linked (M2M) in the same transaction.
     """
     data = lead_in.model_dump()
-    product_ids: list[int] = data.pop("product_ids")  # always present (default=[])
+    product_ids: list[int] = data.pop("product_ids")   # always present (default=[])
+    account_ids: list[int] = data.pop("account_ids")   # always present (default=[])
 
     new_lead = Lead(**data, owner_id=current_user.id)
     db.add(new_lead)
@@ -261,6 +280,8 @@ async def create_lead(
 
     if product_ids:
         new_lead.products = await _resolve_products(product_ids, db)
+    if account_ids:
+        new_lead.accounts = await _resolve_accounts(account_ids, db)
 
     await log_change(db, table_name="leads", record_id=new_lead.id,
                      action="CREATE", new_values=snapshot(new_lead),
@@ -280,7 +301,7 @@ async def get_lead(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await _get_lead(lead_id, current_user, db, options=[_product_opts()])
+    return await _get_lead(lead_id, current_user, db, options=[_product_opts(), _account_opts()])
 
 
 # ---------------------------------------------------------------------------
@@ -296,19 +317,23 @@ async def update_lead(
 ):
     """Partial update — only the fields you send are changed (uses exclude_unset).
     Pass ``product_ids`` (even as ``[]``) to replace the entire products list.
-    Omit ``product_ids`` entirely to leave existing products untouched.
+    Pass ``account_ids`` (even as ``[]``) to replace the entire linked-accounts list.
+    Omit either field entirely to leave it untouched.
     """
     lead = await _get_lead(lead_id, current_user, db)
     old = snapshot(lead)
 
     data = lead_in.model_dump(exclude_unset=True)
-    product_ids = data.pop("product_ids", None)  # None = not sent → leave products unchanged
+    product_ids = data.pop("product_ids", None)   # None = not sent → leave unchanged
+    account_ids = data.pop("account_ids", None)   # None = not sent → leave unchanged
 
     for key, value in data.items():
         setattr(lead, key, value)
 
     if product_ids is not None:  # even [] means "clear all products"
         lead.products = await _resolve_products(product_ids, db)
+    if account_ids is not None:  # even [] means "clear all linked accounts"
+        lead.accounts = await _resolve_accounts(account_ids, db)
 
     await log_change(db, table_name="leads", record_id=lead_id,
                      action="UPDATE", old_values=old, new_values=snapshot(lead),
