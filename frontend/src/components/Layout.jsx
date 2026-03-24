@@ -15,6 +15,7 @@ import {
   CheckSquare,
   ChevronDown,
   Shield,
+  LineChart,
 } from 'lucide-react';
 import { AuthContext, api } from '../context/AuthContext';
 import ChatBot from './ChatBot';
@@ -45,6 +46,7 @@ const Layout = () => {
     { name: 'Opportunities', path: '/opportunities', icon: BarChart3 },
     { name: 'Leads',         path: '/leads',         icon: UserPlus },
     { name: 'Tasks',         path: '/tasks',         icon: CheckSquare, badge: overdueBadge },
+    { name: 'Forecast',      path: '/forecast',      icon: LineChart },
   ];
 
   // Fetch recent activity for notifications panel

@@ -315,6 +315,22 @@ async def update_opportunity(
     return opp
 
 
+@router.patch("/{opp_id}", response_model=OpportunityResponse)
+async def patch_opportunity(
+    opp_id: int,
+    opp_in: OpportunityUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.SALES_REP)),
+):
+    """Partial update — only the fields you send are changed (uses exclude_unset)."""
+    opp = await _get_opportunity_or_403(opp_id, current_user, db)
+    for key, value in opp_in.model_dump(exclude_unset=True).items():
+        setattr(opp, key, value)
+    await db.commit()
+    await db.refresh(opp)
+    return opp
+
+
 @router.patch("/{opp_id}/stage", response_model=OpportunityResponse)
 async def update_opportunity_stage(
     opp_id: int,
