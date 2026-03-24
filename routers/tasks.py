@@ -8,7 +8,8 @@ from sqlalchemy.future import select
 
 from auth import get_current_user
 from database import get_db
-from models import Task, TaskStatus, TaskPriority, User, UserRole
+from models import NotificationType, Task, TaskStatus, TaskPriority, User, UserRole
+from services.notification_service import create_notification
 from permissions import ROLE_RANK
 from schemas import TaskCreate, TaskRead, TaskUpdate
 
@@ -155,6 +156,20 @@ async def create_task(
     """Create a task. created_by is set to the current user automatically."""
     new_task = Task(**task_in.model_dump(), created_by_id=current_user.id)
     db.add(new_task)
+    await db.flush()   # get new_task.id before notification
+
+    # Notify assignee (skip if they're assigning to themselves)
+    if new_task.assigned_to_id != current_user.id:
+        await create_notification(
+            db,
+            user_id=new_task.assigned_to_id,
+            type=NotificationType.TASK_DUE,
+            title=f"📋 New task assigned: {new_task.subject}",
+            message=f'{current_user.full_name or current_user.email} assigned you a task: "{new_task.subject}".',
+            related_record_type="task",
+            related_record_id=new_task.id,
+        )
+
     await db.commit()
     await db.refresh(new_task)
     return new_task
@@ -186,8 +201,23 @@ async def update_task(
 ):
     task = await _get_accessible_task(task_id, current_user, db)
 
-    for key, value in task_in.model_dump(exclude_unset=True).items():
+    updates = task_in.model_dump(exclude_unset=True)
+    new_assignee_id = updates.get("assigned_to_id")
+    reassigned = new_assignee_id and new_assignee_id != task.assigned_to_id
+
+    for key, value in updates.items():
         setattr(task, key, value)
+
+    if reassigned:
+        await create_notification(
+            db,
+            user_id=new_assignee_id,
+            type=NotificationType.TASK_DUE,
+            title=f"📋 Task assigned to you: {task.subject}",
+            message=f'{current_user.full_name or current_user.email} assigned you a task: "{task.subject}".',
+            related_record_type="task",
+            related_record_id=task.id,
+        )
 
     await db.commit()
     await db.refresh(task)

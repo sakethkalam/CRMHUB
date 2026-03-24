@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from config import settings
 from database import engine, Base
 from limiter import limiter
-from routers import users, accounts, contacts, opportunities, chat, leads, tasks, reports, activities, admin
+from routers import users, accounts, contacts, opportunities, chat, leads, tasks, reports, activities, admin, notifications
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +99,25 @@ async def run_migrations():
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             )
         """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                type VARCHAR(50) NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                is_read BOOLEAN NOT NULL DEFAULT FALSE,
+                related_record_type VARCHAR(100),
+                related_record_id INTEGER,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_notifications_user_id ON notifications(user_id)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_notifications_created_at ON notifications(created_at)"
+        ))
     logger.info("Startup migrations complete.")
 
 
@@ -148,6 +167,7 @@ app.include_router(tasks.router)
 app.include_router(reports.router)
 app.include_router(activities.router)
 app.include_router(admin.router)
+app.include_router(notifications.router)
 
 
 @app.get("/")

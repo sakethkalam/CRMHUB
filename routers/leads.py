@@ -7,7 +7,8 @@ from sqlalchemy.future import select
 
 from auth import get_current_user
 from database import get_db
-from models import Account, Contact, Lead, LeadSource, LeadStatus, Opportunity, OpportunityStage, User, UserRole
+from models import Account, Contact, Lead, LeadSource, LeadStatus, NotificationType, Opportunity, OpportunityStage, User, UserRole
+from services.notification_service import create_notification
 from permissions import ROLE_RANK, require_role
 from schemas import (
     LeadConvertRequest,
@@ -223,6 +224,23 @@ async def convert_lead(
     lead.converted_account_id = account.id
     lead.converted_contact_id = contact.id
     lead.converted_opportunity_id = opportunity.id if opportunity else None
+
+    # Notify the lead owner (unless they did the conversion themselves)
+    if lead.owner_id and lead.owner_id != current_user.id:
+        await create_notification(
+            db,
+            user_id=lead.owner_id,
+            type=NotificationType.LEAD_ASSIGNED,
+            title=f"✅ Lead converted: {lead.first_name} {lead.last_name}",
+            message=(
+                f'{current_user.full_name or current_user.email} converted lead '
+                f'"{lead.first_name} {lead.last_name}" into Account "{account_name}"'
+                + (f' and Opportunity "{opportunity.name}"' if opportunity else "")
+                + "."
+            ),
+            related_record_type="lead",
+            related_record_id=lead.id,
+        )
 
     await db.commit()
 

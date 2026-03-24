@@ -9,6 +9,30 @@ from database import Base
 # ---------------------------------------------------------------------------
 # Audit log — records every admin/mutating action for compliance visibility
 # ---------------------------------------------------------------------------
+class NotificationType(str, enum.Enum):
+    TASK_DUE      = "TaskDue"
+    DEAL_WON      = "DealWon"
+    DEAL_LOST     = "DealLost"
+    LEAD_ASSIGNED = "LeadAssigned"
+    MENTION_NOTE  = "MentionInNote"
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id                  = Column(Integer, primary_key=True, index=True)
+    user_id             = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    type                = Column(Enum(NotificationType, values_callable=lambda obj: [e.value for e in obj], native_enum=False), nullable=False)
+    title               = Column(String(255), nullable=False)
+    message             = Column(Text, nullable=False)
+    is_read             = Column(Boolean, default=False, nullable=False)
+    related_record_type = Column(String(100), nullable=True)   # e.g. "opportunity", "task", "lead"
+    related_record_id   = Column(Integer, nullable=True)
+    created_at          = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 

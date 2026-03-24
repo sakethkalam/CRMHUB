@@ -9,7 +9,8 @@ from sqlalchemy.future import select
 
 from auth import get_current_user
 from database import get_db
-from models import Account, ForecastCategory, Opportunity, OpportunityStage, User, UserRole
+from models import Account, ForecastCategory, Notification, NotificationType, Opportunity, OpportunityStage, User, UserRole
+from services.notification_service import create_notification
 from permissions import ROLE_RANK, require_role
 from schemas import OpportunityCreate, OpportunityUpdate, OpportunityStageUpdate, OpportunityResponse
 
@@ -343,6 +344,30 @@ async def update_opportunity_stage(
     opp.stage = stage_in.stage
     if stage_in.close_reason is not None:
         opp.close_reason = stage_in.close_reason
+
+    # Notify the account owner when a deal closes
+    new_stage_val = stage_in.stage.value if hasattr(stage_in.stage, "value") else str(stage_in.stage)
+    if new_stage_val in ("Closed Won", "Closed Lost"):
+        notif_type = NotificationType.DEAL_WON if new_stage_val == "Closed Won" else NotificationType.DEAL_LOST
+        emoji = "🎉" if new_stage_val == "Closed Won" else "❌"
+        # Find account owner to notify
+        if opp.account_id:
+            acct_result = await db.execute(select(Account).where(Account.id == opp.account_id))
+            acct = acct_result.scalar_one_or_none()
+            notify_user_id = acct.owner_id if acct and acct.owner_id else current_user.id
+        else:
+            notify_user_id = current_user.id
+        await create_notification(
+            db,
+            user_id=notify_user_id,
+            type=notif_type,
+            title=f"{emoji} Deal {new_stage_val}: {opp.name}",
+            message=f'"{opp.name}" has been marked as {new_stage_val}.'
+                    + (f' Reason: {stage_in.close_reason}' if stage_in.close_reason else ''),
+            related_record_type="opportunity",
+            related_record_id=opp.id,
+        )
+
     await db.commit()
     await db.refresh(opp)
     return opp
