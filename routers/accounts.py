@@ -8,6 +8,7 @@ from database import get_db
 from models import Account, User, UserRole
 from permissions import ROLE_RANK, require_role
 from schemas import AccountCreate, AccountUpdate, AccountResponse
+from services.audit_service import log_change, snapshot
 from typing import List
 
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
@@ -67,6 +68,10 @@ async def create_account(
     """Create a new account; owner is set to the logged-in user."""
     new_account = Account(**account_in.model_dump(), owner_id=current_user.id)
     db.add(new_account)
+    await db.flush()  # populate new_account.id before logging
+    await log_change(db, table_name="accounts", record_id=new_account.id,
+                     action="CREATE", new_values=snapshot(new_account),
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     await db.refresh(new_account)
     return new_account
@@ -118,10 +123,14 @@ async def update_account(
     - Manager / Admin: any account in their visibility scope.
     """
     account = await _get_account(account_id, current_user, db)
+    old = snapshot(account)
 
     for key, value in account_in.model_dump(exclude_unset=True).items():
         setattr(account, key, value)
 
+    await log_change(db, table_name="accounts", record_id=account_id,
+                     action="UPDATE", old_values=old, new_values=snapshot(account),
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     await db.refresh(account)
     return account
@@ -139,6 +148,10 @@ async def delete_account(
     - Manager / Admin: any account in their visibility scope.
     """
     account = await _get_account(account_id, current_user, db)
+    old = snapshot(account)
     await db.delete(account)
+    await log_change(db, table_name="accounts", record_id=account_id,
+                     action="DELETE", old_values=old,
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     return None

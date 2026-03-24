@@ -8,6 +8,7 @@ from sqlalchemy.future import select
 from auth import get_current_user
 from database import get_db
 from models import Account, Contact, Lead, LeadSource, LeadStatus, NotificationType, Opportunity, OpportunityStage, User, UserRole
+from services.audit_service import log_change, snapshot
 from services.notification_service import create_notification
 from permissions import ROLE_RANK, require_role
 from schemas import (
@@ -100,6 +101,10 @@ async def create_lead(
     """Create a new lead owned by the logged-in user."""
     new_lead = Lead(**lead_in.model_dump(), owner_id=current_user.id)
     db.add(new_lead)
+    await db.flush()
+    await log_change(db, table_name="leads", record_id=new_lead.id,
+                     action="CREATE", new_values=snapshot(new_lead),
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     await db.refresh(new_lead)
     return new_lead
@@ -130,10 +135,14 @@ async def update_lead(
     current_user: User = Depends(require_role(UserRole.SALES_REP)),
 ):
     lead = await _get_lead(lead_id, current_user, db)
+    old = snapshot(lead)
 
     for key, value in lead_in.model_dump(exclude_unset=True).items():
         setattr(lead, key, value)
 
+    await log_change(db, table_name="leads", record_id=lead_id,
+                     action="UPDATE", old_values=old, new_values=snapshot(lead),
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     await db.refresh(lead)
     return lead
@@ -150,7 +159,11 @@ async def delete_lead(
     current_user: User = Depends(require_role(UserRole.SALES_REP)),
 ):
     lead = await _get_lead(lead_id, current_user, db)
+    old = snapshot(lead)
     await db.delete(lead)
+    await log_change(db, table_name="leads", record_id=lead_id,
+                     action="DELETE", old_values=old,
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     return None
 
@@ -218,12 +231,17 @@ async def convert_lead(
         await db.flush()
 
     # --- Mark lead converted ---
+    old_lead = snapshot(lead)
     lead.is_converted = True
     lead.converted_at = datetime.now(timezone.utc)
     lead.status = LeadStatus.CONVERTED
     lead.converted_account_id = account.id
     lead.converted_contact_id = contact.id
     lead.converted_opportunity_id = opportunity.id if opportunity else None
+
+    await log_change(db, table_name="leads", record_id=lead_id,
+                     action="UPDATE", old_values=old_lead, new_values=snapshot(lead),
+                     user_id=current_user.id, user_email=current_user.email)
 
     # Notify the lead owner (unless they did the conversion themselves)
     if lead.owner_id and lead.owner_id != current_user.id:

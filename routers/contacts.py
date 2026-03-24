@@ -8,6 +8,7 @@ from database import get_db
 from models import Account, Activity, Contact, User, UserRole
 from permissions import ROLE_RANK, require_role
 from schemas import ActivityResponse, ContactCreate, ContactUpdate, ContactResponse
+from services.audit_service import log_change, snapshot
 from typing import List
 
 router = APIRouter(prefix="/contacts", tags=["Contacts"])
@@ -77,6 +78,10 @@ async def create_contact(
 
     new_contact = Contact(**contact_in.model_dump())
     db.add(new_contact)
+    await db.flush()
+    await log_change(db, table_name="contacts", record_id=new_contact.id,
+                     action="CREATE", new_values=snapshot(new_contact),
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     await db.refresh(new_contact)
     return new_contact
@@ -134,9 +139,13 @@ async def update_contact(
     if contact_in.account_id and contact_in.account_id != contact.account_id:
         await _verify_account_access(contact_in.account_id, current_user, db)
 
+    old = snapshot(contact)
     for key, value in contact_in.model_dump(exclude_unset=True).items():
         setattr(contact, key, value)
 
+    await log_change(db, table_name="contacts", record_id=contact_id,
+                     action="UPDATE", old_values=old, new_values=snapshot(contact),
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     await db.refresh(contact)
     return contact
@@ -149,7 +158,11 @@ async def delete_contact(
     current_user: User = Depends(require_role(UserRole.SALES_REP)),
 ):
     contact = await _get_contact_or_403(contact_id, current_user, db)
+    old = snapshot(contact)
     await db.delete(contact)
+    await log_change(db, table_name="contacts", record_id=contact_id,
+                     action="DELETE", old_values=old,
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     return None
 

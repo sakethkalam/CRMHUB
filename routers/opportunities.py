@@ -10,6 +10,7 @@ from sqlalchemy.future import select
 from auth import get_current_user
 from database import get_db
 from models import Account, ForecastCategory, Notification, NotificationType, Opportunity, OpportunityStage, User, UserRole
+from services.audit_service import log_change, snapshot
 from services.notification_service import create_notification
 from permissions import ROLE_RANK, require_role
 from schemas import OpportunityCreate, OpportunityUpdate, OpportunityStageUpdate, OpportunityResponse
@@ -257,6 +258,10 @@ async def create_opportunity(
 
     new_opp = Opportunity(**opp_in.model_dump())
     db.add(new_opp)
+    await db.flush()
+    await log_change(db, table_name="opportunities", record_id=new_opp.id,
+                     action="CREATE", new_values=snapshot(new_opp),
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     await db.refresh(new_opp)
     return new_opp
@@ -308,9 +313,13 @@ async def update_opportunity(
     if opp_in.account_id and opp_in.account_id != opp.account_id:
         await _verify_account_access(opp_in.account_id, current_user, db)
 
+    old = snapshot(opp)
     for key, value in opp_in.model_dump(exclude_unset=True).items():
         setattr(opp, key, value)
 
+    await log_change(db, table_name="opportunities", record_id=opp_id,
+                     action="UPDATE", old_values=old, new_values=snapshot(opp),
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     await db.refresh(opp)
     return opp
@@ -325,8 +334,12 @@ async def patch_opportunity(
 ):
     """Partial update — only the fields you send are changed (uses exclude_unset)."""
     opp = await _get_opportunity_or_403(opp_id, current_user, db)
+    old = snapshot(opp)
     for key, value in opp_in.model_dump(exclude_unset=True).items():
         setattr(opp, key, value)
+    await log_change(db, table_name="opportunities", record_id=opp_id,
+                     action="UPDATE", old_values=old, new_values=snapshot(opp),
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     await db.refresh(opp)
     return opp
@@ -341,6 +354,7 @@ async def update_opportunity_stage(
 ):
     """Drag-and-drop stage update for the Kanban board."""
     opp = await _get_opportunity_or_403(opp_id, current_user, db)
+    old = snapshot(opp)
     opp.stage = stage_in.stage
     if stage_in.close_reason is not None:
         opp.close_reason = stage_in.close_reason
@@ -368,6 +382,9 @@ async def update_opportunity_stage(
             related_record_id=opp.id,
         )
 
+    await log_change(db, table_name="opportunities", record_id=opp_id,
+                     action="UPDATE", old_values=old, new_values=snapshot(opp),
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     await db.refresh(opp)
     return opp
@@ -380,6 +397,10 @@ async def delete_opportunity(
     current_user: User = Depends(require_role(UserRole.SALES_REP)),
 ):
     opp = await _get_opportunity_or_403(opp_id, current_user, db)
+    old = snapshot(opp)
     await db.delete(opp)
+    await log_change(db, table_name="opportunities", record_id=opp_id,
+                     action="DELETE", old_values=old,
+                     user_id=current_user.id, user_email=current_user.email)
     await db.commit()
     return None
