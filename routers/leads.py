@@ -5,10 +5,16 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy import insert as sa_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 
 from auth import get_current_user
 from database import get_db
-from models import Account, Contact, Lead, LeadSource, LeadStatus, NotificationType, Opportunity, OpportunityStage, User, UserRole
+from models import (
+    Account, Contact, Lead, LeadSource, LeadStatus,
+    NotificationType, Opportunity, OpportunityStage,
+    Product, ProductFamily,
+    User, UserRole,
+)
 from services.audit_service import log_change, snapshot
 from services.csv_import import ImportResult, RowError, parse_csv_bytes, validate_email
 from services.notification_service import create_notification
@@ -47,13 +53,56 @@ def _apply_lead_scope(query, current_user: User):
     return query.where(Lead.owner_id == current_user.id)
 
 
-async def _get_lead(lead_id: int, current_user: User, db: AsyncSession) -> Lead:
-    """Fetch lead with role-aware visibility; raises 404 if not visible."""
+async def _get_lead(
+    lead_id: int,
+    current_user: User,
+    db: AsyncSession,
+    options: list | None = None,
+) -> Lead:
+    """Fetch lead with role-aware visibility; raises 404 if not visible.
+
+    Pass ``options`` (e.g. ``[_product_opts()]``) to eager-load relationships
+    in the same query.  Mutation endpoints call this without options and
+    re-fetch after commit via ``_fetch_lead_loaded``.
+    """
     q = _apply_lead_scope(select(Lead).where(Lead.id == lead_id), current_user)
+    if options:
+        q = q.options(*options)
     lead = (await db.execute(q)).scalar_one_or_none()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     return lead
+
+
+# ---------------------------------------------------------------------------
+# Product-loading helpers
+# ---------------------------------------------------------------------------
+
+def _product_opts():
+    """selectinload chain: Lead.products → family → category."""
+    return (
+        selectinload(Lead.products)
+        .selectinload(Product.family)
+        .selectinload(ProductFamily.category)
+    )
+
+
+async def _fetch_lead_loaded(lead_id: int, db: AsyncSession) -> Lead:
+    """Re-fetch a lead with products eagerly loaded (used after mutations)."""
+    result = await db.execute(
+        select(Lead).where(Lead.id == lead_id).options(_product_opts())
+    )
+    return result.scalar_one()
+
+
+async def _resolve_products(product_ids: list[int], db: AsyncSession) -> list[Product]:
+    """Fetch active Product rows for the given IDs."""
+    if not product_ids:
+        return []
+    result = await db.execute(
+        select(Product).where(Product.id.in_(product_ids), Product.is_active == True)
+    )
+    return result.scalars().all()
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +224,7 @@ async def list_leads(
     Admin / Manager → all leads (optionally filtered by owner_id);
     Sales Rep → own leads only.
     """
-    query = _apply_lead_scope(select(Lead), current_user)
+    query = _apply_lead_scope(select(Lead), current_user).options(_product_opts())
 
     if status is not None:
         query = query.where(Lead.status == status)
@@ -187,7 +236,7 @@ async def list_leads(
 
     query = query.order_by(Lead.created_at.desc()).offset(skip).limit(limit)
     result = await db.execute(query)
-    return result.scalars().all()
+    return result.scalars().unique().all()
 
 
 # ---------------------------------------------------------------------------
@@ -200,16 +249,25 @@ async def create_lead(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.SALES_REP)),
 ):
-    """Create a new lead owned by the logged-in user."""
-    new_lead = Lead(**lead_in.model_dump(), owner_id=current_user.id)
+    """Create a new lead owned by the logged-in user.
+    If product_ids is provided, those active products are linked in the same transaction.
+    """
+    data = lead_in.model_dump()
+    product_ids: list[int] = data.pop("product_ids")  # always present (default=[])
+
+    new_lead = Lead(**data, owner_id=current_user.id)
     db.add(new_lead)
     await db.flush()
+
+    if product_ids:
+        new_lead.products = await _resolve_products(product_ids, db)
+
     await log_change(db, table_name="leads", record_id=new_lead.id,
                      action="CREATE", new_values=snapshot(new_lead),
                      user_id=current_user.id, user_email=current_user.email)
     await db.commit()
-    await db.refresh(new_lead)
-    return new_lead
+
+    return await _fetch_lead_loaded(new_lead.id, db)
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +280,7 @@ async def get_lead(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await _get_lead(lead_id, current_user, db)
+    return await _get_lead(lead_id, current_user, db, options=[_product_opts()])
 
 
 # ---------------------------------------------------------------------------
@@ -236,18 +294,28 @@ async def update_lead(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.SALES_REP)),
 ):
+    """Partial update — only the fields you send are changed (uses exclude_unset).
+    Pass ``product_ids`` (even as ``[]``) to replace the entire products list.
+    Omit ``product_ids`` entirely to leave existing products untouched.
+    """
     lead = await _get_lead(lead_id, current_user, db)
     old = snapshot(lead)
 
-    for key, value in lead_in.model_dump(exclude_unset=True).items():
+    data = lead_in.model_dump(exclude_unset=True)
+    product_ids = data.pop("product_ids", None)  # None = not sent → leave products unchanged
+
+    for key, value in data.items():
         setattr(lead, key, value)
+
+    if product_ids is not None:  # even [] means "clear all products"
+        lead.products = await _resolve_products(product_ids, db)
 
     await log_change(db, table_name="leads", record_id=lead_id,
                      action="UPDATE", old_values=old, new_values=snapshot(lead),
                      user_id=current_user.id, user_email=current_user.email)
     await db.commit()
-    await db.refresh(lead)
-    return lead
+
+    return await _fetch_lead_loaded(lead_id, db)
 
 
 # ---------------------------------------------------------------------------

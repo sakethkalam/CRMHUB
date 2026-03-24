@@ -6,10 +6,15 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 
 from auth import get_current_user
 from database import get_db
-from models import Account, ForecastCategory, Notification, NotificationType, Opportunity, OpportunityStage, User, UserRole
+from models import (
+    Account, ForecastCategory, Notification, NotificationType,
+    Opportunity, OpportunityStage, Product, ProductFamily,
+    User, UserRole,
+)
 from services.audit_service import log_change, snapshot
 from services.notification_service import create_notification
 from permissions import ROLE_RANK, require_role
@@ -52,15 +57,58 @@ async def _verify_account_access(account_id: int, current_user: User, db: AsyncS
         raise HTTPException(status_code=403, detail="Not authorized to access this account")
 
 
-async def _get_opportunity_or_403(opp_id: int, current_user: User, db: AsyncSession) -> Opportunity:
-    """Fetch opportunity; verify access through its linked account."""
-    result = await db.execute(select(Opportunity).where(Opportunity.id == opp_id))
-    opp = result.scalar_one_or_none()
+async def _get_opportunity_or_403(
+    opp_id: int,
+    current_user: User,
+    db: AsyncSession,
+    options: list | None = None,
+) -> Opportunity:
+    """Fetch opportunity; verify access through its linked account.
+
+    Pass ``options`` (e.g. ``[_product_opts()]``) to eager-load relationships
+    in the same query (used by read endpoints).  Mutation endpoints call this
+    without options and re-fetch after commit via ``_fetch_opp_loaded``.
+    """
+    q = select(Opportunity).where(Opportunity.id == opp_id)
+    if options:
+        q = q.options(*options)
+    opp = (await db.execute(q)).scalar_one_or_none()
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     if opp.account_id:
         await _verify_account_access(opp.account_id, current_user, db)
     return opp
+
+
+# ---------------------------------------------------------------------------
+# Product-loading helpers
+# ---------------------------------------------------------------------------
+
+def _product_opts():
+    """selectinload chain: Opportunity.products → family → category."""
+    return (
+        selectinload(Opportunity.products)
+        .selectinload(Product.family)
+        .selectinload(ProductFamily.category)
+    )
+
+
+async def _fetch_opp_loaded(opp_id: int, db: AsyncSession) -> Opportunity:
+    """Re-fetch an opportunity with products eagerly loaded (used after mutations)."""
+    result = await db.execute(
+        select(Opportunity).where(Opportunity.id == opp_id).options(_product_opts())
+    )
+    return result.scalar_one()
+
+
+async def _resolve_products(product_ids: list[int], db: AsyncSession) -> list[Product]:
+    """Fetch active Product rows for the given IDs."""
+    if not product_ids:
+        return []
+    result = await db.execute(
+        select(Product).where(Product.id.in_(product_ids), Product.is_active == True)
+    )
+    return result.scalars().all()
 
 
 # ---------------------------------------------------------------------------
@@ -252,19 +300,27 @@ async def create_opportunity(
     """
     Create an opportunity.
     If account_id is provided, the current user must have access to that account.
+    If product_ids is provided, those active products are linked in the same transaction.
     """
     if opp_in.account_id:
         await _verify_account_access(opp_in.account_id, current_user, db)
 
-    new_opp = Opportunity(**opp_in.model_dump())
+    data = opp_in.model_dump()
+    product_ids: list[int] = data.pop("product_ids")  # always present (default=[])
+
+    new_opp = Opportunity(**data)
     db.add(new_opp)
     await db.flush()
+
+    if product_ids:
+        new_opp.products = await _resolve_products(product_ids, db)
+
     await log_change(db, table_name="opportunities", record_id=new_opp.id,
                      action="CREATE", new_values=snapshot(new_opp),
                      user_id=current_user.id, user_email=current_user.email)
     await db.commit()
-    await db.refresh(new_opp)
-    return new_opp
+
+    return await _fetch_opp_loaded(new_opp.id, db)
 
 
 @router.get("/", response_model=List[OpportunityResponse])
@@ -281,7 +337,11 @@ async def list_opportunities(
     Admin → all; Manager → their region; Sales Rep → own accounts only.
     """
     acct_ids = _accessible_account_ids(current_user)
-    query = select(Opportunity).where(Opportunity.account_id.in_(acct_ids))
+    query = (
+        select(Opportunity)
+        .where(Opportunity.account_id.in_(acct_ids))
+        .options(_product_opts())
+    )
 
     if account_id:
         query = query.where(Opportunity.account_id == account_id)
@@ -289,7 +349,7 @@ async def list_opportunities(
         query = query.where(Opportunity.stage == stage)
 
     result = await db.execute(query.offset(skip).limit(limit))
-    return result.scalars().all()
+    return result.scalars().unique().all()
 
 
 @router.get("/{opp_id}", response_model=OpportunityResponse)
@@ -298,7 +358,7 @@ async def get_opportunity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await _get_opportunity_or_403(opp_id, current_user, db)
+    return await _get_opportunity_or_403(opp_id, current_user, db, options=[_product_opts()])
 
 
 @router.put("/{opp_id}", response_model=OpportunityResponse)
@@ -314,15 +374,21 @@ async def update_opportunity(
         await _verify_account_access(opp_in.account_id, current_user, db)
 
     old = snapshot(opp)
-    for key, value in opp_in.model_dump(exclude_unset=True).items():
+    data = opp_in.model_dump(exclude_unset=True)
+    product_ids = data.pop("product_ids", None)  # None = not sent → leave products unchanged
+
+    for key, value in data.items():
         setattr(opp, key, value)
+
+    if product_ids is not None:  # even [] means "clear all products"
+        opp.products = await _resolve_products(product_ids, db)
 
     await log_change(db, table_name="opportunities", record_id=opp_id,
                      action="UPDATE", old_values=old, new_values=snapshot(opp),
                      user_id=current_user.id, user_email=current_user.email)
     await db.commit()
-    await db.refresh(opp)
-    return opp
+
+    return await _fetch_opp_loaded(opp_id, db)
 
 
 @router.patch("/{opp_id}", response_model=OpportunityResponse)
@@ -332,17 +398,28 @@ async def patch_opportunity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.SALES_REP)),
 ):
-    """Partial update — only the fields you send are changed (uses exclude_unset)."""
+    """Partial update — only the fields you send are changed (uses exclude_unset).
+    Pass ``product_ids`` (even as ``[]``) to replace the entire products list.
+    Omit ``product_ids`` entirely to leave existing products untouched.
+    """
     opp = await _get_opportunity_or_403(opp_id, current_user, db)
     old = snapshot(opp)
-    for key, value in opp_in.model_dump(exclude_unset=True).items():
+
+    data = opp_in.model_dump(exclude_unset=True)
+    product_ids = data.pop("product_ids", None)  # None = not sent → leave products unchanged
+
+    for key, value in data.items():
         setattr(opp, key, value)
+
+    if product_ids is not None:  # even [] means "clear all products"
+        opp.products = await _resolve_products(product_ids, db)
+
     await log_change(db, table_name="opportunities", record_id=opp_id,
                      action="UPDATE", old_values=old, new_values=snapshot(opp),
                      user_id=current_user.id, user_email=current_user.email)
     await db.commit()
-    await db.refresh(opp)
-    return opp
+
+    return await _fetch_opp_loaded(opp_id, db)
 
 
 @router.patch("/{opp_id}/stage", response_model=OpportunityResponse)
@@ -364,7 +441,6 @@ async def update_opportunity_stage(
     if new_stage_val in ("Closed Won", "Closed Lost"):
         notif_type = NotificationType.DEAL_WON if new_stage_val == "Closed Won" else NotificationType.DEAL_LOST
         emoji = "🎉" if new_stage_val == "Closed Won" else "❌"
-        # Find account owner to notify
         if opp.account_id:
             acct_result = await db.execute(select(Account).where(Account.id == opp.account_id))
             acct = acct_result.scalar_one_or_none()
@@ -386,8 +462,8 @@ async def update_opportunity_stage(
                      action="UPDATE", old_values=old, new_values=snapshot(opp),
                      user_id=current_user.id, user_email=current_user.email)
     await db.commit()
-    await db.refresh(opp)
-    return opp
+
+    return await _fetch_opp_loaded(opp_id, db)
 
 
 @router.delete("/{opp_id}", status_code=status.HTTP_204_NO_CONTENT)

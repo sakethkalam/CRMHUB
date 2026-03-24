@@ -430,3 +430,11 @@ class Product(Base):
     updated_at          = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     family = relationship("ProductFamily", back_populates="products")
+
+    @property
+    def family_name(self) -> str:
+        return self.family.name if self.family else ""
+
+    @property
+    def category_name(self) -> str:
+        return self.family.category.name if self.family and self.family.category else ""
