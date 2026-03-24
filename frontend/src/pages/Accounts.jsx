@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Plus, Search, Building2, X, Globe, Tag, User, Calendar, Users, Mail, Phone, Link } from 'lucide-react';
-import { api } from '../context/AuthContext';
+import { useState, useEffect, useContext } from 'react';
+import { Plus, Search, Building2, X, Globe, Tag, User, Calendar, Users, Mail, Phone, Link, Trash2, AlertTriangle, AlertCircle } from 'lucide-react';
+import { api, AuthContext } from '../context/AuthContext';
 import TasksTab from '../components/TasksTab';
 
 const inputCls = 'w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-crmAccent dark:text-white transition-all placeholder:text-slate-400';
@@ -20,14 +20,34 @@ const DetailRow = ({ icon: Icon, label, value }) => (
   </div>
 );
 
+// ── Toast ────────────────────────────────────────────────
+const Toast = ({ message, type, onClose }) => {
+  useEffect(() => {
+    const t = setTimeout(onClose, 3500);
+    return () => clearTimeout(t);
+  }, [onClose]);
+
+  const styles = {
+    success: 'bg-emerald-600 text-white',
+    error:   'bg-red-600 text-white',
+  };
+
+  return (
+    <div className={`fixed bottom-6 right-6 z-[70] flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-semibold max-w-sm animate-in slide-in-from-bottom-2 ${styles[type] || styles.success}`}>
+      <span className="flex-1">{message}</span>
+      <button onClick={onClose} className="opacity-70 hover:opacity-100"><X size={15} /></button>
+    </div>
+  );
+};
+
 // ── Contacts tab for an account ──────────────────────────
 const AccountContactsTab = ({ account }) => {
-  const [contacts, setContacts]       = useState([]);
-  const [loading, setLoading]         = useState(true);
-  const [addOpen, setAddOpen]         = useState(false);
-  const [addForm, setAddForm]         = useState({ first_name: '', last_name: '', email: '', phone: '' });
-  const [addSaving, setAddSaving]     = useState(false);
-  const [addError, setAddError]       = useState('');
+  const [contacts, setContacts]   = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [addOpen, setAddOpen]     = useState(false);
+  const [addForm, setAddForm]     = useState({ first_name: '', last_name: '', email: '', phone: '' });
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError]   = useState('');
 
   const fetchContacts = async () => {
     setLoading(true);
@@ -137,7 +157,6 @@ const AccountContactsTab = ({ account }) => {
         </div>
       )}
 
-      {/* Add contact form */}
       {addOpen && (
         <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-crmCard p-4 space-y-3 shadow-sm">
           <p className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">New Contact</p>
@@ -178,6 +197,9 @@ const AccountContactsTab = ({ account }) => {
 
 // ── Main component ───────────────────────────────────────
 const Accounts = () => {
+  const { user } = useContext(AuthContext);
+  const canDelete = user?.role === 'Admin' || user?.role === 'Manager';
+
   const [accounts, setAccounts]       = useState([]);
   const [loading, setLoading]         = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -189,6 +211,15 @@ const Accounts = () => {
   // Create modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData]       = useState({ name: '', industry: '', website: '' });
+
+  // Toast
+  const [toast, setToast] = useState(null);
+  const showToast = (message, type = 'success') => setToast({ message, type });
+
+  // Delete dialog state
+  // type: 'confirm' | 'blocked_opps' | 'warn_contacts'
+  const [deleteDialog, setDeleteDialog] = useState(null);
+  // deleteDialog = { type, account, openOppsCount?, contactsCount?, activitiesCount? }
 
   const fetchAccounts = async () => {
     try {
@@ -225,6 +256,60 @@ const Accounts = () => {
     } catch (err) {
       console.error('Failed to create account', err);
     }
+  };
+
+  // ── Delete flow ────────────────────────────────────────
+
+  // Step 1: User clicks trash → show simple confirmation first
+  const initiateDelete = (e, acc) => {
+    e.stopPropagation(); // don't open the drawer
+    setDeleteDialog({ type: 'confirm', account: acc });
+  };
+
+  // Step 2: After user confirms the simple dialog, call DELETE ?force=false
+  const executeDelete = async (force = false) => {
+    const { account } = deleteDialog;
+    setDeleteDialog(null);
+    try {
+      await api.delete(`/accounts/${account.id}?force=${force}`);
+      // Success — remove from list
+      setAccounts(prev => prev.filter(a => a.id !== account.id));
+      if (selected?.id === account.id) setSelected(null);
+      showToast(`Account '${account.name}' has been deleted.`);
+    } catch (err) {
+      const data = err.response?.data;
+      if (err.response?.status === 409 && data) {
+        const detail = typeof data.detail === 'object' ? data.detail : data;
+        if (detail.open_opportunities) {
+          setDeleteDialog({ type: 'blocked_opps', account, openOppsCount: detail.open_opportunities });
+        } else if (detail.contacts_count) {
+          setDeleteDialog({ type: 'warn_contacts', account, contactsCount: detail.contacts_count });
+        } else {
+          showToast(detail.detail || 'Cannot delete account.', 'error');
+        }
+      } else {
+        showToast(err.response?.data?.detail || 'Failed to delete account.', 'error');
+      }
+    }
+  };
+
+  // Called from the simple "Delete?" confirm dialog
+  const onConfirmDelete = () => executeDelete(false);
+
+  // Called from warn_contacts dialog after user clicks "Yes, Delete Account"
+  const onForceDelete = () => {
+    const { account } = deleteDialog;
+    setDeleteDialog(null);
+    // Re-run with force=true
+    api.delete(`/accounts/${account.id}?force=true`)
+      .then(() => {
+        setAccounts(prev => prev.filter(a => a.id !== account.id));
+        if (selected?.id === account.id) setSelected(null);
+        showToast(`Account '${account.name}' has been deleted.`);
+      })
+      .catch(err => {
+        showToast(err.response?.data?.detail || 'Failed to delete account.', 'error');
+      });
   };
 
   return (
@@ -272,12 +357,13 @@ const Accounts = () => {
                 <th className="px-6 py-3.5 font-semibold">Website</th>
                 <th className="px-6 py-3.5 font-semibold">Region</th>
                 <th className="px-6 py-3.5 font-semibold">Created On</th>
+                {canDelete && <th className="px-4 py-3.5 font-semibold w-12" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={canDelete ? 6 : 5} className="px-6 py-12 text-center text-slate-500">
                     <div className="flex flex-col items-center">
                       <div className="w-6 h-6 border-2 border-crmAccent border-t-transparent rounded-full animate-spin" />
                       <p className="mt-2 text-sm">Loading accounts...</p>
@@ -286,7 +372,7 @@ const Accounts = () => {
                 </tr>
               ) : accounts.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={canDelete ? 6 : 5} className="px-6 py-12 text-center text-slate-500">
                     No accounts found matching your search.
                   </td>
                 </tr>
@@ -314,6 +400,17 @@ const Accounts = () => {
                     <td className="px-6 py-4 text-slate-500 dark:text-slate-400">
                       {new Date(acc.created_at).toLocaleDateString()}
                     </td>
+                    {canDelete && (
+                      <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={e => initiateDelete(e, acc)}
+                          title="Delete account"
+                          className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-all"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -382,6 +479,18 @@ const Accounts = () => {
                 <TasksTab relatedAccountId={selected.id} />
               )}
             </div>
+
+            {/* Drawer footer — Delete button (role-gated) */}
+            {canDelete && (
+              <div className="flex-shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30">
+                <button
+                  onClick={e => initiateDelete(e, selected)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                >
+                  <Trash2 size={15} /> Delete Account
+                </button>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -421,6 +530,128 @@ const Accounts = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ── Delete Dialogs ────────────────────────────────── */}
+
+      {/* 1. Simple confirmation (shown before any API call) */}
+      {deleteDialog?.type === 'confirm' && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setDeleteDialog(null)} />
+          <div className="relative bg-white dark:bg-crmCard w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                  <Trash2 size={18} className="text-red-600 dark:text-red-400" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Delete &lsquo;{deleteDialog.account.name}&rsquo;?
+                  </h3>
+                  <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
+                    This action cannot be undone. Related activities will also be deleted.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 pb-5">
+              <button
+                onClick={() => setDeleteDialog(null)}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onConfirmDelete}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Blocked — open opportunities (hard block, no delete option) */}
+      {deleteDialog?.type === 'blocked_opps' && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setDeleteDialog(null)} />
+          <div className="relative bg-white dark:bg-crmCard w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                  <AlertCircle size={18} className="text-red-600 dark:text-red-400" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Cannot Delete Account</h3>
+                  <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
+                    This account has{' '}
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">
+                      {deleteDialog.openOppsCount} open {deleteDialog.openOppsCount === 1 ? 'opportunity' : 'opportunities'}
+                    </span>. Close or reassign all open opportunities before deleting.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end px-6 pb-5">
+              <button
+                onClick={() => setDeleteDialog(null)}
+                className="px-5 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-sm font-semibold text-slate-700 dark:text-slate-200 rounded-lg transition-colors"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Warning — has contacts (soft block, can force) */}
+      {deleteDialog?.type === 'warn_contacts' && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setDeleteDialog(null)} />
+          <div className="relative bg-white dark:bg-crmCard w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                  <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Account Has Linked Contacts</h3>
+                  <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
+                    Deleting &lsquo;{deleteDialog.account.name}&rsquo; will unlink{' '}
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">
+                      {deleteDialog.contactsCount} {deleteDialog.contactsCount === 1 ? 'contact' : 'contacts'}
+                    </span>. They will not be deleted but will no longer be associated with this account.
+                  </p>
+                  <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-300">Do you want to continue?</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 pb-5">
+              <button
+                onClick={() => setDeleteDialog(null)}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onForceDelete}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg transition-colors"
+              >
+                Yes, Delete Account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Toast ─────────────────────────────────────────── */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
       )}
     </div>
   );
