@@ -40,11 +40,13 @@ const Login = () => {
       if (detail === 'pending_approval') {
         setPendingApproval(true);
       } else {
-        setErrorStatus(
-          detail ||
-          err.message ||
-          (isLoginView ? 'Invalid credentials' : 'Registration failed. Check your data.')
-        );
+        // detail can be an array (Pydantic validation errors) or an object — always stringify
+        const message = Array.isArray(detail)
+          ? detail.map(d => d.msg || JSON.stringify(d)).join(' · ')
+          : (typeof detail === 'string' ? detail : null)
+            || err.message
+            || (isLoginView ? 'Invalid credentials' : 'Registration failed. Check your data.');
+        setErrorStatus(message);
       }
     } finally {
       setIsLoading(false);
