@@ -9,6 +9,7 @@ import {
   LogOut,
   Menu,
   Bell,
+  Search,
   X,
   TrendingUp,
   UserPlus,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react';
 import { AuthContext, api } from '../context/AuthContext';
 import ChatBot from './ChatBot';
+import GlobalSearch from './GlobalSearch';
 import MyTasksWidget from './MyTasksWidget';
 
 const Layout = () => {
@@ -83,6 +85,7 @@ const Layout = () => {
   }, [notifOpen]);
 
   const handleLogout = async () => { await logout(); navigate('/login'); };
+  const openSearch = () => window.dispatchEvent(new CustomEvent('crm:open-search'));
 
   const typeColors = {
     account: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
@@ -219,9 +222,20 @@ const Layout = () => {
 
         {/* Top Header */}
         <header className="h-16 flex-shrink-0 flex items-center justify-between px-4 sm:px-6 lg:px-8 bg-white/80 dark:bg-crmCard/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40 shadow-sm">
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
             <button className="lg:hidden p-2 -ml-2 text-slate-500" onClick={() => setMobileMenuOpen(true)}>
               <Menu className="w-6 h-6" />
+            </button>
+            {/* Search trigger */}
+            <button
+              onClick={openSearch}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-xs">Search</span>
+              <kbd className="hidden sm:flex items-center gap-0.5 text-[10px] font-mono text-slate-400">
+                <span>⌘</span><span>K</span>
+              </kbd>
             </button>
           </div>
 
@@ -295,6 +309,7 @@ const Layout = () => {
         </main>
       </div>
       <ChatBot />
+      <GlobalSearch />
     </div>
   );
 };
