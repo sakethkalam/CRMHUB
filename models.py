@@ -172,7 +172,7 @@ class User(Base):
     full_name = Column(String(255))
     is_active = Column(Boolean, default=False)   # False until admin approves
     is_approved = Column(Boolean, default=False)  # Admin must approve new registrations
-    role = Column(Enum(UserRole, values_callable=lambda obj: [e.value for e in obj]), default=UserRole.SALES_REP, nullable=False)
+    role = Column(Enum(UserRole, values_callable=lambda obj: [e.value for e in obj], native_enum=False), default=UserRole.SALES_REP, nullable=False)
     region = Column(String(100), nullable=True)   # e.g. "North", "West" — used for Manager scoping
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     last_login = Column(DateTime(timezone=True), nullable=True)   # recorded on each successful login
