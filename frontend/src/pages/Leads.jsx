@@ -1,5 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, UserPlus, X, ArrowRightCircle, Trash2, CheckCircle2, Phone, Mail, Building2, Briefcase, Tag, Calendar, User, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  Plus, Search, UserPlus, X, ArrowRightCircle, Trash2, CheckCircle2,
+  Phone, Mail, Building2, Briefcase, Tag, Calendar, User, ChevronRight,
+  Package,
+} from 'lucide-react';
 import { api } from '../context/AuthContext';
 
 const STATUSES = ['New', 'Contacted', 'Qualified', 'Unqualified', 'Converted'];
@@ -13,10 +17,19 @@ const STATUS_COLORS = {
   'Converted':   'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
 };
 
+const REG_STATUS_STYLES = {
+  'Approved':        'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400',
+  'Pending':         'bg-amber-100  dark:bg-amber-900/30  text-amber-700  dark:text-amber-400',
+  'Discontinued':    'bg-red-100    dark:bg-red-900/30    text-red-700    dark:text-red-400',
+  'Investigational': 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
+};
+
 const EMPTY_FORM = {
   first_name: '', last_name: '', email: '', phone: '',
   company_name: '', job_title: '', lead_source: 'Web',
   status: 'New', notes: '',
+  selProducts: [],
+  selAccounts: [],
 };
 
 const EMPTY_CONVERT = {
@@ -27,18 +40,16 @@ const EMPTY_CONVERT = {
 const inputCls = 'w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-crmAccent dark:text-white transition-all placeholder:text-slate-400';
 const labelCls = 'block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5';
 
-// ── Toast component ──────────────────────────────────────
+// ── Toast ────────────────────────────────────────────────
 const Toast = ({ toast, onDismiss }) => {
   if (!toast) return null;
   const isError = toast.type === 'error';
   return (
-    <div
-      className={`fixed bottom-6 right-6 z-[60] flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-semibold border transition-all animate-in slide-in-from-bottom-4 duration-300 ${
-        isError
-          ? 'bg-red-50 dark:bg-red-900/80 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700'
-          : 'bg-emerald-50 dark:bg-emerald-900/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700'
-      }`}
-    >
+    <div className={`fixed bottom-6 right-6 z-[70] flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-semibold border transition-all animate-in slide-in-from-bottom-4 duration-300 ${
+      isError
+        ? 'bg-red-50 dark:bg-red-900/80 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700'
+        : 'bg-emerald-50 dark:bg-emerald-900/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700'
+    }`}>
       {isError ? <X size={16} /> : <CheckCircle2 size={16} />}
       {toast.message}
       <button onClick={onDismiss} className="ml-2 opacity-60 hover:opacity-100 transition-opacity">
@@ -61,6 +72,136 @@ const DetailRow = ({ icon: Icon, label, value }) => (
   </div>
 );
 
+// ── Products multi-select ────────────────────────────────
+const ProductMultiSelect = ({ selected, onChange, products }) => {
+  const [query, setQuery] = useState('');
+  const [open, setOpen]   = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtered = products.filter(p =>
+    !selected.find(s => s.id === p.id) &&
+    (p.name.toLowerCase().includes(query.toLowerCase()) ||
+     (p.sku || '').toLowerCase().includes(query.toLowerCase()))
+  );
+
+  const remove = (id) => onChange(selected.filter(s => s.id !== id));
+
+  return (
+    <div ref={ref} className="relative">
+      <div
+        className="min-h-[42px] flex flex-wrap gap-1.5 items-center px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus-within:ring-2 focus-within:ring-crmAccent cursor-text transition-all"
+        onClick={() => setOpen(true)}
+      >
+        {selected.map(p => (
+          <span key={p.id} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium">
+            {p.name}{p.unit_price != null ? ` · $${Number(p.unit_price).toLocaleString()}` : ''}
+            <button type="button" onMouseDown={e => { e.preventDefault(); remove(p.id); }} className="text-blue-400 hover:text-blue-600 dark:hover:text-blue-200 transition-colors">
+              <X size={11} />
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder={selected.length === 0 ? 'Search by name or SKU…' : ''}
+          className="flex-1 min-w-[140px] bg-transparent outline-none text-sm text-slate-700 dark:text-slate-200 placeholder:text-slate-400"
+        />
+      </div>
+      {open && filtered.length > 0 && (
+        <ul className="absolute z-50 mt-1 w-full max-h-52 overflow-y-auto bg-white dark:bg-crmCard border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg divide-y divide-slate-100 dark:divide-slate-800">
+          {filtered.map(p => (
+            <li
+              key={p.id}
+              onMouseDown={e => { e.preventDefault(); onChange([...selected, p]); setQuery(''); }}
+              className="flex items-center justify-between px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+            >
+              <div>
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{p.name}</p>
+                {p.sku && <p className="text-xs text-slate-400">{p.sku}</p>}
+              </div>
+              {p.unit_price != null && (
+                <span className="text-xs text-slate-500 dark:text-slate-400 ml-2 shrink-0">
+                  ${Number(p.unit_price).toLocaleString()}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+// ── Accounts multi-select (flat — no primary) ────────────
+const AccountMultiSelect = ({ selected, onChange, accounts }) => {
+  const [query, setQuery] = useState('');
+  const [open, setOpen]   = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtered = accounts.filter(a =>
+    !selected.find(s => s.id === a.id) &&
+    a.name.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const remove = (id) => onChange(selected.filter(s => s.id !== id));
+
+  return (
+    <div ref={ref} className="relative">
+      <div
+        className="min-h-[42px] flex flex-wrap gap-1.5 items-center px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus-within:ring-2 focus-within:ring-crmAccent cursor-text transition-all"
+        onClick={() => setOpen(true)}
+      >
+        {selected.map(a => (
+          <span key={a.id} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium">
+            <Building2 size={11} className="text-slate-400" />
+            {a.name}
+            <button type="button" onMouseDown={e => { e.preventDefault(); remove(a.id); }} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+              <X size={11} />
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder={selected.length === 0 ? 'Search accounts…' : ''}
+          className="flex-1 min-w-[140px] bg-transparent outline-none text-sm text-slate-700 dark:text-slate-200 placeholder:text-slate-400"
+        />
+      </div>
+      {open && filtered.length > 0 && (
+        <ul className="absolute z-50 mt-1 w-full max-h-52 overflow-y-auto bg-white dark:bg-crmCard border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg divide-y divide-slate-100 dark:divide-slate-800">
+          {filtered.map(a => (
+            <li
+              key={a.id}
+              onMouseDown={e => { e.preventDefault(); onChange([...selected, a]); setQuery(''); }}
+              className="px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+            >
+              <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{a.name}</p>
+              {a.industry && <p className="text-xs text-slate-400">{a.industry}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+// ── Main component ───────────────────────────────────────
 const Leads = () => {
   const [leads, setLeads]           = useState([]);
   const [loading, setLoading]       = useState(true);
@@ -70,6 +211,7 @@ const Leads = () => {
 
   // Detail drawer
   const [selectedLead, setSelectedLead] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   // Create modal
   const [createOpen, setCreateOpen] = useState(false);
@@ -78,11 +220,15 @@ const Leads = () => {
   const [formError, setFormError]   = useState('');
 
   // Convert modal
-  const [convertLead, setConvertLead]   = useState(null);
-  const [convertForm, setConvertForm]   = useState(EMPTY_CONVERT);
-  const [converting, setConverting]     = useState(false);
+  const [convertLead, setConvertLead]     = useState(null);
+  const [convertForm, setConvertForm]     = useState(EMPTY_CONVERT);
+  const [converting, setConverting]       = useState(false);
   const [convertResult, setConvertResult] = useState(null);
-  const [convertError, setConvertError] = useState('');
+  const [convertError, setConvertError]   = useState('');
+
+  // Lookup data
+  const [productSummary, setProductSummary] = useState([]);
+  const [allAccounts, setAllAccounts]       = useState([]);
 
   // Toast
   const [toast, setToast] = useState(null);
@@ -96,6 +242,16 @@ const Leads = () => {
     const t = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // Fetch lookup data on mount
+  useEffect(() => {
+    api.get('/products/summary?is_active=true')
+      .then(r => setProductSummary(r.data))
+      .catch(() => {});
+    api.get('/accounts?limit=200')
+      .then(r => setAllAccounts(r.data))
+      .catch(() => {});
+  }, []);
 
   const fetchLeads = async () => {
     setLoading(true);
@@ -114,14 +270,6 @@ const Leads = () => {
 
   useEffect(() => { fetchLeads(); }, [statusFilter, sourceFilter]);
 
-  // Keep drawer in sync after refresh
-  useEffect(() => {
-    if (selectedLead) {
-      const updated = leads.find(l => l.id === selectedLead.id);
-      if (updated) setSelectedLead(updated);
-    }
-  }, [leads]);
-
   // Client-side search
   const visible = leads.filter(l => {
     if (!search) return true;
@@ -133,13 +281,33 @@ const Leads = () => {
     );
   });
 
+  // Open detail: show list data immediately, then hydrate with full detail
+  const openLead = async (lead) => {
+    setSelectedLead(lead);
+    setDetailLoading(true);
+    try {
+      const res = await api.get(`/leads/${lead.id}`);
+      setSelectedLead(res.data);
+    } catch {
+      // keep list data
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   // --- Create ---
   const handleCreate = async (e) => {
     e.preventDefault();
     setSaving(true);
     setFormError('');
     try {
-      await api.post('/leads/', formData);
+      const { selProducts, selAccounts, ...fields } = formData;
+      const payload = {
+        ...fields,
+        product_ids: selProducts.map(p => p.id),
+        account_ids: selAccounts.map(a => a.id),
+      };
+      await api.post('/leads/', payload);
       setCreateOpen(false);
       setFormData(EMPTY_FORM);
       fetchLeads();
@@ -222,7 +390,7 @@ const Leads = () => {
           </p>
         </div>
         <button
-          onClick={() => { setCreateOpen(true); setFormError(''); }}
+          onClick={() => { setCreateOpen(true); setFormError(''); setFormData(EMPTY_FORM); }}
           className="bg-crmAccent hover:bg-crmHover text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm focus:ring-4 focus:ring-blue-500/20"
         >
           <Plus size={18} /> New Lead
@@ -281,6 +449,8 @@ const Leads = () => {
                 <th className="px-6 py-3.5 font-semibold">Email</th>
                 <th className="px-6 py-3.5 font-semibold">Source</th>
                 <th className="px-6 py-3.5 font-semibold">Status</th>
+                <th className="px-6 py-3.5 font-semibold">Products</th>
+                <th className="px-6 py-3.5 font-semibold">Accounts</th>
                 <th className="px-6 py-3.5 font-semibold">Owner</th>
                 <th className="px-6 py-3.5 font-semibold">Created</th>
                 <th className="px-6 py-3.5 font-semibold text-right">Actions</th>
@@ -289,7 +459,7 @@ const Leads = () => {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan="8" className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan="10" className="px-6 py-12 text-center text-slate-500">
                     <div className="flex flex-col items-center gap-2">
                       <div className="w-6 h-6 border-2 border-crmAccent border-t-transparent rounded-full animate-spin" />
                       <p className="text-sm">Loading leads...</p>
@@ -298,75 +468,113 @@ const Leads = () => {
                 </tr>
               ) : visible.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="px-6 py-12 text-center text-slate-400 text-sm">
+                  <td colSpan="10" className="px-6 py-12 text-center text-slate-400 text-sm">
                     No leads found. Create your first lead to get started.
                   </td>
                 </tr>
               ) : (
-                visible.map(lead => (
-                  <tr
-                    key={lead.id}
-                    onClick={() => setSelectedLead(lead)}
-                    className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group cursor-pointer ${selectedLead?.id === lead.id ? 'bg-blue-50/60 dark:bg-blue-900/10' : ''} ${lead.is_converted ? 'opacity-60' : ''}`}
-                  >
-                    <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-100">
-                      <div className="flex items-center gap-2">
-                        {lead.first_name} {lead.last_name}
-                        <ChevronRight size={14} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                      {lead.job_title && (
-                        <p className="text-xs text-slate-400 font-normal mt-0.5">{lead.job_title}</p>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
-                      {lead.company_name || <span className="text-slate-400">—</span>}
-                    </td>
-                    <td className="px-6 py-4 text-slate-500 dark:text-slate-400">
-                      {lead.email || <span className="text-slate-400">—</span>}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium">
-                        {lead.lead_source}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[lead.status] || ''}`}>
-                        {lead.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-slate-500 dark:text-slate-400 text-xs">
-                      {lead.owner?.full_name || <span className="text-slate-400">—</span>}
-                    </td>
-                    <td className="px-6 py-4 text-slate-400 text-xs">
-                      {new Date(lead.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                        {!lead.is_converted && (
+                visible.map(lead => {
+                  const prods = lead.products || [];
+                  const accs  = lead.accounts  || [];
+                  return (
+                    <tr
+                      key={lead.id}
+                      onClick={() => openLead(lead)}
+                      className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group cursor-pointer ${selectedLead?.id === lead.id ? 'bg-blue-50/60 dark:bg-blue-900/10' : ''} ${lead.is_converted ? 'opacity-60' : ''}`}
+                    >
+                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-100">
+                        <div className="flex items-center gap-2">
+                          {lead.first_name} {lead.last_name}
+                          <ChevronRight size={14} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                        {lead.job_title && (
+                          <p className="text-xs text-slate-400 font-normal mt-0.5">{lead.job_title}</p>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
+                        {lead.company_name || <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className="px-6 py-4 text-slate-500 dark:text-slate-400">
+                        {lead.email || <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium">
+                          {lead.lead_source}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[lead.status] || ''}`}>
+                          {lead.status}
+                        </span>
+                      </td>
+                      {/* Products column */}
+                      <td className="px-6 py-4">
+                        {prods.length === 0 ? (
+                          <span className="text-slate-400">—</span>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-slate-700 dark:text-slate-200 font-medium truncate max-w-[110px]">
+                              {prods[0].name}
+                            </span>
+                            {prods.length > 1 && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shrink-0">
+                                +{prods.length - 1} more
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      {/* Accounts column */}
+                      <td className="px-6 py-4">
+                        {accs.length === 0 ? (
+                          <span className="text-slate-400">—</span>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-slate-700 dark:text-slate-200 font-medium truncate max-w-[110px]">
+                              {accs[0].name}
+                            </span>
+                            {accs.length > 1 && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
+                                +{accs.length - 1} more
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-slate-500 dark:text-slate-400 text-xs">
+                        {lead.owner?.full_name || <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className="px-6 py-4 text-slate-400 text-xs">
+                        {new Date(lead.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                          {!lead.is_converted && (
+                            <button
+                              onClick={(e) => openConvert(lead, e)}
+                              title="Convert lead"
+                              className="p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md transition-colors"
+                            >
+                              <ArrowRightCircle size={16} />
+                            </button>
+                          )}
+                          {lead.is_converted && (
+                            <span title="Converted" className="p-1.5 text-purple-400">
+                              <CheckCircle2 size={16} />
+                            </span>
+                          )}
                           <button
-                            onClick={(e) => openConvert(lead, e)}
-                            title="Convert lead"
-                            className="p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md transition-colors"
+                            onClick={(e) => handleDelete(lead, e)}
+                            title="Delete lead"
+                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
                           >
-                            <ArrowRightCircle size={16} />
+                            <Trash2 size={16} />
                           </button>
-                        )}
-                        {lead.is_converted && (
-                          <span title="Converted" className="p-1.5 text-purple-400">
-                            <CheckCircle2 size={16} />
-                          </span>
-                        )}
-                        <button
-                          onClick={(e) => handleDelete(lead, e)}
-                          title="Delete lead"
-                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -376,14 +584,13 @@ const Leads = () => {
       {/* ── Detail Drawer ──────────────────────────────────────── */}
       {selectedLead && (
         <>
-          {/* Backdrop (mobile / click-away) */}
           <div
             className="fixed inset-0 z-30 bg-slate-900/30 backdrop-blur-[2px] lg:hidden"
             onClick={() => setSelectedLead(null)}
           />
           <div className="fixed inset-y-0 right-0 z-40 w-full max-w-sm bg-white dark:bg-crmCard shadow-2xl border-l border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
 
-            {/* Drawer header */}
+            {/* Header */}
             <div className="flex items-start justify-between p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 flex-shrink-0">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-full bg-crmAccent/10 text-crmAccent flex items-center justify-center font-bold text-sm flex-shrink-0">
@@ -406,15 +613,21 @@ const Leads = () => {
               </button>
             </div>
 
-            {/* Drawer body */}
+            {/* Body */}
             <div className="flex-1 overflow-y-auto p-5 space-y-1">
-              <DetailRow icon={Briefcase} label="Job Title" value={selectedLead.job_title} />
-              <DetailRow icon={Building2} label="Company" value={selectedLead.company_name} />
-              <DetailRow icon={Mail} label="Email" value={selectedLead.email} />
-              <DetailRow icon={Phone} label="Phone" value={selectedLead.phone} />
-              <DetailRow icon={Tag} label="Lead Source" value={selectedLead.lead_source} />
-              <DetailRow icon={User} label="Owner" value={selectedLead.owner?.full_name} />
-              <DetailRow icon={Calendar} label="Created" value={new Date(selectedLead.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })} />
+              {detailLoading && (
+                <div className="flex justify-center py-4">
+                  <div className="w-5 h-5 border-2 border-crmAccent border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+
+              <DetailRow icon={Briefcase} label="Job Title"   value={selectedLead.job_title} />
+              <DetailRow icon={Building2} label="Company"     value={selectedLead.company_name} />
+              <DetailRow icon={Mail}      label="Email"       value={selectedLead.email} />
+              <DetailRow icon={Phone}     label="Phone"       value={selectedLead.phone} />
+              <DetailRow icon={Tag}       label="Lead Source" value={selectedLead.lead_source} />
+              <DetailRow icon={User}      label="Owner"       value={selectedLead.owner?.full_name} />
+              <DetailRow icon={Calendar}  label="Created"     value={new Date(selectedLead.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })} />
 
               {selectedLead.notes && (
                 <div className="pt-3">
@@ -422,6 +635,68 @@ const Leads = () => {
                   <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-100 dark:border-slate-800">
                     {selectedLead.notes}
                   </p>
+                </div>
+              )}
+
+              {/* ── Products of Interest ── */}
+              {(selectedLead.products?.length > 0 || !detailLoading) && (
+                <div className="pt-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+                    <Package size={12} /> Products of Interest
+                  </p>
+                  {!selectedLead.products || selectedLead.products.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">No products linked.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {selectedLead.products.map(p => (
+                        <div key={p.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                          <div className="w-7 h-7 rounded-md bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                            <Package size={13} className="text-blue-500" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{p.name}</p>
+                            <p className="text-xs text-slate-400">{p.sku || '—'}</p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            {p.unit_price != null && (
+                              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                                ${Number(p.unit_price).toLocaleString()}
+                              </span>
+                            )}
+                            {p.regulatory_status && (
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${REG_STATUS_STYLES[p.regulatory_status] || 'bg-slate-100 text-slate-600'}`}>
+                                {p.regulatory_status}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Related Accounts ── */}
+              {(selectedLead.accounts?.length > 0 || !detailLoading) && (
+                <div className="pt-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+                    <Building2 size={12} /> Related Accounts
+                  </p>
+                  {!selectedLead.accounts || selectedLead.accounts.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">No accounts linked.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedLead.accounts.map(a => (
+                        <span
+                          key={a.id}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium"
+                        >
+                          <Building2 size={11} className="text-slate-400" />
+                          {a.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -435,7 +710,7 @@ const Leads = () => {
               )}
             </div>
 
-            {/* Drawer footer actions */}
+            {/* Footer */}
             <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 flex-shrink-0 flex gap-2">
               {!selectedLead.is_converted && (
                 <button
@@ -521,6 +796,28 @@ const Leads = () => {
                     {STATUSES.filter(s => s !== 'Converted').map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
+              </div>
+
+              {/* Products of Interest */}
+              <div>
+                <label className={labelCls}>Products of Interest</label>
+                <ProductMultiSelect
+                  selected={formData.selProducts}
+                  onChange={v => setFormData({...formData, selProducts: v})}
+                  products={productSummary}
+                />
+                <p className="text-xs text-slate-400 mt-1">Which products is this lead interested in?</p>
+              </div>
+
+              {/* Related Accounts */}
+              <div>
+                <label className={labelCls}>Related Accounts</label>
+                <AccountMultiSelect
+                  selected={formData.selAccounts}
+                  onChange={v => setFormData({...formData, selAccounts: v})}
+                  accounts={allAccounts}
+                />
+                <p className="text-xs text-slate-400 mt-1">Which accounts/organizations is this lead associated with?</p>
               </div>
 
               <div>
