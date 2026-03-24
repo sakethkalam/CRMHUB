@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from config import settings
 from database import engine, Base
 from limiter import limiter
-from routers import users, accounts, contacts, opportunities, chat, leads, tasks, reports, activities, admin, notifications
+from routers import users, accounts, contacts, opportunities, chat, leads, tasks, reports, activities, admin, notifications, ai_assistant
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +168,7 @@ app.include_router(reports.router)
 app.include_router(activities.router)
 app.include_router(admin.router)
 app.include_router(notifications.router)
+app.include_router(ai_assistant.router)
 
 
 @app.get("/")
