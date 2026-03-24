@@ -11,6 +11,7 @@ import Tasks from './pages/Tasks';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import Forecast from './pages/Forecast';
+import Products from './pages/Products';
 import Login from './pages/Login';
 import AdminLayout from './pages/admin/AdminLayout';
 import UserManagement from './pages/admin/UserManagement';
@@ -60,7 +61,8 @@ function App() {
             <Route path="opportunities" element={<Opportunities />} />
             <Route path="leads" element={<Leads />} />
             <Route path="tasks" element={<Tasks />} />
-            <Route path="forecast" element={<Forecast />} />
+            <Route path="forecast"  element={<Forecast />} />
+            <Route path="products" element={<Products />} />
             <Route path="profile" element={<Profile />} />
             <Route path="settings" element={<Settings />} />
           </Route>
