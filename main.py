@@ -199,33 +199,39 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title=settings.APP_NAME,
-    version=settings.APP_VERSION,
+    title="SHINSO API",
+    description="SHINSO — The Intelligent Layer for Corporate Accounts",
+    version="1.0.0",
     lifespan=lifespan,
-    # Disable interactive API docs in production
-    docs_url="/docs" if settings.DEBUG else None,
-    redoc_url="/redoc" if settings.DEBUG else None,
-    openapi_url="/openapi.json" if settings.DEBUG else None,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
 )
 
 # Rate limiter
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS
-ALLOWED_ORIGINS = [
+# CORS — merge hardcoded dev origins with FRONTEND_URL from env
+allowed_origins = [
     "http://localhost:5173",
     "http://localhost:3000",
-    "https://crmhub-ten.vercel.app",
+    settings.FRONTEND_URL,
 ]
+allowed_origins = [o for o in allowed_origins if o]  # drop empty strings
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/health", tags=["Health"])
+async def health():
+    return {"status": "ok", "app": "SHINSO", "version": "1.0.0"}
+
 
 app.include_router(users.router)
 app.include_router(accounts.router)
@@ -245,7 +251,7 @@ app.include_router(products.router)
 
 @app.get("/")
 async def root():
-    return {"message": "CRM API is running"}
+    return {"message": "SHINSO API is running"}
 
 
 if __name__ == "__main__":

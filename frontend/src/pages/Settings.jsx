@@ -49,7 +49,7 @@ const Settings = () => {
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <SettingsIcon className="text-crmAccent w-7 h-7" /> Settings
         </h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Customize your CRMHUB experience.</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Customize your SHINSO experience.</p>
       </div>
 
       {/* Appearance */}
@@ -57,7 +57,7 @@ const Settings = () => {
         <h2 className="font-semibold text-slate-800 dark:text-slate-100 mb-1 flex items-center gap-2">
           <Palette size={16} /> Appearance
         </h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Choose how CRMHUB looks on your device.</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Choose how SHINSO looks on your device.</p>
         <div className="grid grid-cols-3 gap-3">
           {[
             { value: 'light', label: 'Light', Icon: Sun },

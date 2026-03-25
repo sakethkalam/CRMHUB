@@ -99,11 +99,14 @@ const Layout = () => {
     <div className="flex flex-col h-full bg-white dark:bg-crmCard border-r border-slate-200 dark:border-slate-800 transition-colors duration-200">
       {/* Logo */}
       <div className="h-16 flex items-center justify-center px-6 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-2 text-crmAccent font-bold text-xl tracking-tight">
-          <div className="w-8 h-8 rounded-lg bg-crmAccent flex items-center justify-center text-white shadow-sm">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-shinso-400 flex items-center justify-center text-white shadow-sm">
             <BarChart3 size={20} strokeWidth={2.5} />
           </div>
-          CRMHUB
+          <div className="flex flex-col leading-tight">
+            <span className="font-semibold text-[#7984EE] text-base tracking-tight">SHINSO</span>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">The Intelligent Layer</span>
+          </div>
         </div>
       </div>
 
@@ -118,7 +121,7 @@ const Layout = () => {
               className={({ isActive }) =>
                 `flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ` +
                 (isActive
-                  ? `bg-blue-50 dark:bg-crmAccent/15 text-crmHover dark:text-crmAccent`
+                  ? `bg-shinso-50 dark:bg-shinso-400/15 text-shinso-600 dark:text-shinso-400`
                   : `text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100`)
               }
               end={link.path === '/'}

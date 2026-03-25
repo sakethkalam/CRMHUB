@@ -1,4 +1,6 @@
-# Medical Device CRM — Backend
+# SHINSO — Backend
+
+SHINSO is a native Teams AI platform for the Corporate Accounts team — combining ARIA AI agent, account intelligence, contract renewal monitoring, and workflow management.
 
 FastAPI + PostgreSQL + SQLAlchemy (async) · Python 3.11+
 

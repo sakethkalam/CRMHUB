@@ -57,17 +57,18 @@ const Login = () => {
     <div className="min-h-screen bg-slate-50 dark:bg-crmDark flex flex-col justify-center py-12 sm:px-6 lg:px-8 transition-colors duration-200">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         
-        {/* CRM Branding */}
-        <div className="flex justify-center">
+        {/* SHINSO Branding */}
+        <div className="flex flex-col items-center gap-3">
           <div className="w-14 h-14 bg-gradient-to-tr from-crmAccent to-indigo-500 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-crmAccent/20">
             <BarChart3 size={32} strokeWidth={2.5} />
           </div>
+          <span className="text-2xl font-semibold text-[#7984EE] tracking-tight">SHINSO</span>
         </div>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+        <h2 className="mt-4 text-center text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
           {isLoginView ? 'Welcome back' : 'Create an account'}
         </h2>
         <p className="mt-2 text-center text-sm text-slate-600 dark:text-slate-400">
-          {isLoginView ? 'Sign in to access your CRM' : 'Join CRMHUB and manage your pipeline'}
+          {isLoginView ? 'The Intelligent Layer for Corporate Accounts' : 'Join SHINSO and manage your pipeline'}
         </p>
       </div>
 
@@ -105,7 +106,7 @@ const Login = () => {
                     required={!isLoginView}
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    className="appearance-none block w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-crmAccent focus:border-crmAccent dark:text-white transition-all shadow-sm"
+                    className="appearance-none block w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-shinso-400 focus:border-shinso-400 dark:text-white transition-all shadow-sm"
                     placeholder="John Doe"
                   />
                 </div>
@@ -121,7 +122,7 @@ const Login = () => {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="appearance-none block w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-crmAccent focus:border-crmAccent dark:text-white transition-all shadow-sm"
+                  className="appearance-none block w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-shinso-400 focus:border-shinso-400 dark:text-white transition-all shadow-sm"
                   placeholder="you@company.com"
                 />
               </div>
@@ -136,7 +137,7 @@ const Login = () => {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="appearance-none block w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-crmAccent focus:border-crmAccent dark:text-white transition-all shadow-sm"
+                  className="appearance-none block w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-shinso-400 focus:border-shinso-400 dark:text-white transition-all shadow-sm"
                   placeholder="••••••••••••"
                 />
               </div>
@@ -150,7 +151,7 @@ const Login = () => {
             <button 
               type="submit"
               disabled={isLoading}
-              className="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-crmAccent hover:bg-crmHover focus:outline-none focus:ring-4 focus:ring-crmAccent/30 disabled:opacity-70 disabled:cursor-not-allowed transition-all group"
+              className="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-shinso-400 hover:bg-shinso-600 focus:outline-none focus:ring-4 focus:ring-shinso-400/30 disabled:opacity-70 disabled:cursor-not-allowed transition-all group"
             >
               {isLoading ? (
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -176,7 +177,7 @@ const Login = () => {
                 setPendingApproval(false);
                 setRegisterSuccess(false);
               }}
-              className="text-sm font-bold text-crmAccent hover:text-crmHover transition-colors focus:outline-none"
+              className="text-sm font-bold text-shinso-400 hover:text-shinso-600 transition-colors focus:outline-none"
             >
               {isLoginView ? 'Sign up' : 'Log in'}
             </button>

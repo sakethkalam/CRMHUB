@@ -21,6 +21,7 @@
 # ==============================================================
 
 from functools import lru_cache  # Standard library — caches function results
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,7 +47,7 @@ class Settings(BaseSettings):
     """
 
     # --- Application ---
-    APP_NAME: str = "Medical Device CRM"       # Default value — used if env var not set
+    APP_NAME: str = "SHINSO"                    # Default value — used if env var not set
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True                          # Set to False in production!
     
@@ -56,6 +57,14 @@ class Settings(BaseSettings):
     # For local development testing, we will use a local SQLite file so you don't
     # need an active Azure PostgreSQL server spinning right now.
     DATABASE_URL: str = "sqlite+aiosqlite:///./crm_local.db"
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def fix_postgres_scheme(cls, v: str) -> str:
+        # Railway injects postgres:// — SQLAlchemy async requires postgresql+asyncpg://
+        if isinstance(v, str) and v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql+asyncpg://", 1)
+        return v
 
     # Think of this like a pool of workers waiting to handle DB queries
     DB_POOL_SIZE: int = 10         # Number of persistent connections
@@ -93,11 +102,12 @@ class Settings(BaseSettings):
 
     # --- CORS (Cross-Origin Resource Sharing) ---
     # Which frontend domains are allowed to call our API.
-    # ["*"] means all domains — OK for dev, lock this down in prod!
-    # In production, set this to: ["https://your-frontend.azurestaticapps.net"]
+    # Set FRONTEND_URL in Railway Variables to your Vercel deployment URL.
+    # main.py builds the origins list dynamically, filtering out empty strings.
     #
     # PYTHON CONCEPT: list[str] means a list where every item is a string
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000", "https://crmhub-ten.vercel.app"]
+    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    FRONTEND_URL: str = ""  # Set to e.g. https://shinso.vercel.app in Railway Variables
 
     # --- Pydantic Settings Config ---
     # model_config tells Pydantic how to behave

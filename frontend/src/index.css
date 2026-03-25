@@ -4,6 +4,12 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --shinso-primary:       #7984EE;
+  --shinso-primary-dark:  #5560d4;
+  --shinso-primary-light: #e0e3fb;
+}
+
 @layer base {
   body {
     font-family: 'Inter', sans-serif;

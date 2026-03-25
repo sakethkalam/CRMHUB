@@ -22,6 +22,7 @@
 # setup/teardown patterns (like DB sessions).
 # ==============================================================
 
+import os
 from typing import AsyncGenerator  # Type hint: a generator that yields async values
 
 from sqlalchemy.ext.asyncio import (
@@ -69,14 +70,21 @@ class Base(DeclarativeBase):
 # database connections that can be reused across requests.
 # This is much faster than opening/closing a connection per request.
 # ---------------------------------------------------------------
+# Railway injects DATABASE_URL as postgres:// — fix to postgresql+asyncpg://
+# The config.py validator handles .env / pydantic-parsed values; this catches
+# cases where the env var is read directly by SQLAlchemy before Settings loads.
+_raw_url = os.environ.get("DATABASE_URL", settings.DATABASE_URL)
+if _raw_url.startswith("postgres://"):
+    _raw_url = _raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
+
 engine: AsyncEngine = create_async_engine(
-    url=settings.DATABASE_URL,
+    url=_raw_url,
     echo=settings.DEBUG,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_timeout=settings.DB_POOL_TIMEOUT,
     pool_pre_ping=True,
-    connect_args={"ssl": "require"} if "postgres.database.azure.com" in settings.DATABASE_URL else {},
+    connect_args={"ssl": "require"} if "postgres.database.azure.com" in _raw_url else {},
 )
 
 
