@@ -52,10 +52,8 @@ class Settings(BaseSettings):
     DEBUG: bool = True                          # Set to False in production!
     
     # --- Database ---
-    # Full connection string for PostgreSQL.
-    # Database Connection
-    # For local development testing, we will use a local SQLite file so you don't
-    # need an active Azure PostgreSQL server spinning right now.
+    # Full PostgreSQL connection string. Set DATABASE_URL in your Railway or
+    # .env file. Local dev falls back to SQLite so no external DB is needed.
     DATABASE_URL: str = "sqlite+aiosqlite:///./crm_local.db"
 
     @field_validator("DATABASE_URL", mode="before")

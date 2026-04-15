@@ -84,7 +84,9 @@ engine: AsyncEngine = create_async_engine(
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_timeout=settings.DB_POOL_TIMEOUT,
     pool_pre_ping=True,
-    connect_args={"ssl": "require"} if "postgres.database.azure.com" in _raw_url else {},
+    connect_args={"ssl": "require"} if any(
+        h in _raw_url for h in ["neon.tech", "railway.app", "supabase.co", "render.com"]
+    ) else {},
 )
 
 
